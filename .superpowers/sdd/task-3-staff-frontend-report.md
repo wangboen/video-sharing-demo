@@ -106,3 +106,106 @@ No backend or ordinary-user frontend files were changed.
 - A commit cannot contain its own final object ID because adding that ID changes the
   commit. The exact hash is reported in the handoff and available through
   `git rev-parse HEAD`.
+
+## Review-fix follow-up
+
+### Heartbeat serialization and lease generations
+
+Root-cause review found that the original heartbeat used only `video.id` as its
+completion guard. A late success could therefore update a later lease for the same
+video, while a late 409 cleared the current task without even checking the ID.
+Release and decision requests also started while a heartbeat was unresolved.
+
+RED:
+
+```text
+npm.cmd test -- src/views/ModerationView.test.js src/services/leaseHeartbeat.test.js src/assets/styleContract.test.js src/toolchainContract.test.js
+```
+
+- The decision request was sent immediately with stale version `4` instead of waiting
+  for the deferred heartbeat version `8`.
+- Release was sent before the deferred heartbeat settled.
+- The generation-guard module did not exist.
+- Accessibility and toolchain assertions failed on the previous CSS and package
+  versions.
+
+GREEN:
+
+- Each claimed task now receives an opaque generation token; numeric video IDs are
+  never used as async ownership proof.
+- Every heartbeat success, conflict, and service-failure completion checks that token
+  before mutating state or messages.
+- A per-generation in-flight promise serializes release and decisions behind the
+  current heartbeat. Decisions use the heartbeat's returned version.
+- Timers pause during mutation and restart only when a retryable failure leaves the
+  same generation active.
+- Deferred-promise/fake-timer tests cover heartbeat plus decision, heartbeat plus
+  release, and late success/conflict from a replaced same-ID generation.
+
+Focused heartbeat verification:
+
+```text
+2 test files passed, 14 tests passed
+```
+
+### Accessibility
+
+- Lease countdown, label, and hint text now use ink `#172033`; amber remains only on
+  the vertical lease accent.
+- Keyboard focus uses a solid `#173B8F` three-pixel outline instead of translucent
+  blue.
+- A CSS contract suite locks both decisions.
+
+Focused accessibility verification:
+
+```text
+1 test file passed, 2 tests passed
+```
+
+### Toolchain alignment
+
+- Runtime metadata declares Node `>=20.17.0`, npm `11.12.x`,
+  `packageManager: npm@11.12.1`, and `.nvmrc` pins the verified local Node `24.15.0`.
+- The test/build stack is aligned on Vite `5.4.21`, `@vitejs/plugin-vue` `5.2.4`,
+  Vitest `1.6.1`, and jsdom `24.1.3`.
+- Dependencies were installed normally and the lockfile was regenerated without
+  junctions, `file:` dependencies, links, or parent-directory package paths.
+
+Installed top-level versions:
+
+```text
+@vitejs/plugin-vue 5.2.4
+jsdom               24.1.3
+vite                5.4.21
+vitest              1.6.1
+```
+
+### Final review-fix verification
+
+```text
+npm.cmd test      9 test files passed, 35 tests passed
+npm.cmd run build Vite 5.4.21 production build passed, 87 modules transformed
+```
+
+Review-fix commit: this report is committed atomically with the follow-up; resolve its
+immutable object ID with `git rev-parse HEAD`.
+
+### Review-fix files
+
+- `video-sharing-staff-frontend/.nvmrc`
+- `video-sharing-staff-frontend/package.json`
+- `video-sharing-staff-frontend/package-lock.json`
+- `video-sharing-staff-frontend/src/services/leaseHeartbeat.js`
+- `video-sharing-staff-frontend/src/services/leaseHeartbeat.test.js`
+- `video-sharing-staff-frontend/src/views/ModerationView.vue`
+- `video-sharing-staff-frontend/src/views/ModerationView.test.js`
+- `video-sharing-staff-frontend/src/assets/main.css`
+- `video-sharing-staff-frontend/src/assets/styleContract.test.js`
+- `video-sharing-staff-frontend/src/toolchainContract.test.js`
+
+### Review-fix concerns
+
+The aligned dependencies were installed into the staff package itself, so the earlier
+temporary-runtime concern is superseded. `npm.cmd ci` emits one non-blocking
+deprecation warning for jsdom 24's transitive `whatwg-encoding` package; the staff
+tests and production build emit no failures.

@@ -1,6 +1,7 @@
 <script setup>
 import { computed, onBeforeUnmount, ref } from 'vue'
 import api from '../services/api'
+import { runLeaseHeartbeat } from '../services/leaseHeartbeat'
 import LeaseRail from '../components/LeaseRail.vue'
 
 const task = ref(null)
@@ -9,12 +10,13 @@ const thumbnailUrl = ref('')
 const claiming = ref(false)
 const releasing = ref(false)
 const deciding = ref(false)
-const heartbeatInFlight = ref(false)
 const emptyQueue = ref(false)
 const rejectReason = ref('')
 const message = ref('')
 const messageKind = ref('status')
 let heartbeatTimer = null
+let currentLeaseToken = null
+const heartbeatFlights = new Map()
 
 const actionLocked = computed(() => claiming.value || releasing.value || deciding.value)
 
@@ -42,28 +44,34 @@ function clearMedia() {
   thumbnailUrl.value = ''
 }
 
-function stopHeartbeat() {
+function stopHeartbeatTimer() {
   if (heartbeatTimer !== null) {
     window.clearInterval(heartbeatTimer)
     heartbeatTimer = null
   }
-  heartbeatInFlight.value = false
 }
 
-function clearTask() {
-  stopHeartbeat()
+function isCurrentLease(token) {
+  return currentLeaseToken === token && task.value !== null
+}
+
+function clearTask(expectedToken = currentLeaseToken) {
+  if (expectedToken && currentLeaseToken !== expectedToken) return false
+  stopHeartbeatTimer()
+  currentLeaseToken = null
   clearMedia()
   task.value = null
   rejectReason.value = ''
+  return true
 }
 
-async function loadMedia(activeTask) {
+async function loadMedia(activeTask, leaseToken) {
   try {
     const videoResponse = await api.get(
       `/api/moderation/videos/${activeTask.id}/preview/video`,
       { responseType: 'blob' },
     )
-    if (task.value?.id !== activeTask.id) return
+    if (!isCurrentLease(leaseToken)) return
     revokeUrl(videoUrl.value)
     videoUrl.value = URL.createObjectURL(videoResponse.data)
 
@@ -72,54 +80,69 @@ async function loadMedia(activeTask) {
         `/api/moderation/videos/${activeTask.id}/preview/thumbnail`,
         { responseType: 'blob' },
       )
-      if (task.value?.id !== activeTask.id) return
+      if (!isCurrentLease(leaseToken)) return
       revokeUrl(thumbnailUrl.value)
       thumbnailUrl.value = URL.createObjectURL(thumbnailResponse.data)
     }
   } catch {
-    if (task.value?.id === activeTask.id) {
+    if (isCurrentLease(leaseToken)) {
       setMessage('媒体预览加载失败，可保留任务后重试或释放任务。', 'error')
     }
   }
 }
 
-async function heartbeat() {
-  if (!task.value || heartbeatInFlight.value) return
+function heartbeat(leaseToken = currentLeaseToken) {
+  if (!isCurrentLease(leaseToken)) return Promise.resolve()
+  if (heartbeatFlights.has(leaseToken)) return heartbeatFlights.get(leaseToken)
   const activeId = task.value.id
-  heartbeatInFlight.value = true
-  try {
-    const { data } = await api.post(`/api/moderation/videos/${activeId}/heartbeat`)
-    if (task.value?.id === activeId) {
+
+  const operation = runLeaseHeartbeat({
+    request: () => api.post(`/api/moderation/videos/${activeId}/heartbeat`),
+    isCurrent: () => isCurrentLease(leaseToken),
+    onSuccess: ({ data }) => {
       task.value = {
         ...task.value,
         version: data.version,
         leaseExpiresAt: data.leaseExpiresAt,
       }
-    }
-  } catch (error) {
-    if (error.response?.status === 409) {
-      clearTask()
+    },
+    onConflict: () => {
+      clearTask(leaseToken)
       setMessage('租约已发生变化，此任务已从本地清除，请重新领取。', 'error')
-    } else if (task.value?.id === activeId) {
+    },
+    onFailure: () => {
       setMessage('租约续期失败。任务仍保留，可继续重试；最终状态以服务器为准。', 'error')
-    }
-  } finally {
-    heartbeatInFlight.value = false
-  }
+    },
+  }).finally(() => {
+    heartbeatFlights.delete(leaseToken)
+  })
+
+  heartbeatFlights.set(leaseToken, operation)
+  return operation
 }
 
-function startHeartbeat() {
-  stopHeartbeat()
-  heartbeatTimer = window.setInterval(heartbeat, 60_000)
+function startHeartbeat(leaseToken = currentLeaseToken) {
+  stopHeartbeatTimer()
+  if (!isCurrentLease(leaseToken)) return
+  heartbeatTimer = window.setInterval(() => heartbeat(leaseToken), 60_000)
+}
+
+async function prepareLeaseMutation(leaseToken) {
+  stopHeartbeatTimer()
+  const pendingHeartbeat = heartbeatFlights.get(leaseToken)
+  if (pendingHeartbeat) await pendingHeartbeat
+  return isCurrentLease(leaseToken)
 }
 
 async function applyTask(nextTask) {
   clearTask()
+  const leaseToken = { videoId: nextTask.id }
+  currentLeaseToken = leaseToken
   task.value = nextTask
   emptyQueue.value = false
   setMessage('任务已领取，请在租约时间内完成审核。')
-  startHeartbeat()
-  await loadMedia(nextTask)
+  startHeartbeat(leaseToken)
+  await loadMedia(nextTask, leaseToken)
 }
 
 async function claimNext() {
@@ -144,20 +167,25 @@ async function claimNext() {
 
 async function releaseTask() {
   if (!task.value || actionLocked.value) return
-  const activeId = task.value.id
+  const leaseToken = currentLeaseToken
   releasing.value = true
   try {
+    if (!await prepareLeaseMutation(leaseToken)) return
+    const activeId = task.value.id
     await api.delete(`/api/moderation/videos/${activeId}/claim`)
-    clearTask()
+    if (!isCurrentLease(leaseToken)) return
+    clearTask(leaseToken)
     setMessage('任务已释放，可以领取下一条。')
   } catch (error) {
+    if (!isCurrentLease(leaseToken)) return
     if (error.response?.status === 409) {
-      clearTask()
+      clearTask(leaseToken)
       setMessage('任务已发生变化，本地任务已清除，请重新领取。', 'error')
     } else {
       setMessage('释放失败，任务仍保留；网络中断时服务器租约会自动到期。', 'error')
     }
   } finally {
+    if (isCurrentLease(leaseToken)) startHeartbeat(leaseToken)
     releasing.value = false
   }
 }
@@ -174,27 +202,32 @@ async function decide(decision) {
     return
   }
 
-  const activeTask = task.value
+  const leaseToken = currentLeaseToken
   deciding.value = true
   message.value = ''
-  const payload = {
-    decision,
-    ...(decision === 'REJECT' ? { reason } : {}),
-    version: activeTask.version,
-  }
 
   try {
+    if (!await prepareLeaseMutation(leaseToken)) return
+    const activeTask = task.value
+    const payload = {
+      decision,
+      ...(decision === 'REJECT' ? { reason } : {}),
+      version: activeTask.version,
+    }
     await api.patch(`/api/moderation/videos/${activeTask.id}`, payload)
-    clearTask()
+    if (!isCurrentLease(leaseToken)) return
+    clearTask(leaseToken)
     setMessage('审核决定已提交，可以领取下一条。')
   } catch (error) {
+    if (!isCurrentLease(leaseToken)) return
     if (error.response?.status === 409) {
-      clearTask()
+      clearTask(leaseToken)
       setMessage('任务已发生变化，本地内容已清除，请重新领取。', 'error')
     } else {
       setMessage('提交失败，当前任务仍保留，请确认后重试。', 'error')
     }
   } finally {
+    if (isCurrentLease(leaseToken)) startHeartbeat(leaseToken)
     deciding.value = false
   }
 }

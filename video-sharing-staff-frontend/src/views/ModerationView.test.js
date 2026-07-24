@@ -33,6 +33,16 @@ const task = {
   hasThumbnail: true,
 }
 
+function deferred() {
+  let resolve
+  let reject
+  const promise = new Promise((resolvePromise, rejectPromise) => {
+    resolve = resolvePromise
+    reject = rejectPromise
+  })
+  return { promise, resolve, reject }
+}
+
 function mediaResponses() {
   mocks.get.mockImplementation((url) => Promise.resolve({
     data: new Blob([url], { type: url.endsWith('video') ? 'video/mp4' : 'image/jpeg' }),
@@ -155,6 +165,51 @@ describe('moderation claim workbench', () => {
 
     await vi.advanceTimersByTimeAsync(60_000)
     expect(mocks.post).toHaveBeenCalledTimes(2)
+  })
+
+  it('serializes a decision behind an in-flight heartbeat and submits the refreshed version', async () => {
+    vi.useFakeTimers()
+    const wrapper = await mountClaimed()
+    const heartbeatRequest = deferred()
+    mocks.post.mockReturnValueOnce(heartbeatRequest.promise)
+    mocks.patch.mockResolvedValue({ status: 200, data: {} })
+
+    await vi.advanceTimersByTimeAsync(60_000)
+    await wrapper.get('[data-test="approve"]').trigger('click')
+
+    expect(mocks.patch).not.toHaveBeenCalled()
+
+    heartbeatRequest.resolve({
+      status: 200,
+      data: { ...task, version: 8, leaseExpiresAt: '2026-07-24T08:18:00' },
+    })
+    await flushPromises()
+
+    expect(mocks.patch).toHaveBeenCalledWith('/api/moderation/videos/42', {
+      decision: 'APPROVE',
+      version: 8,
+    })
+  })
+
+  it('serializes release behind an in-flight heartbeat', async () => {
+    vi.useFakeTimers()
+    const wrapper = await mountClaimed()
+    const heartbeatRequest = deferred()
+    mocks.post.mockReturnValueOnce(heartbeatRequest.promise)
+    mocks.delete.mockResolvedValue({ status: 204 })
+
+    await vi.advanceTimersByTimeAsync(60_000)
+    await wrapper.get('[data-test="release"]').trigger('click')
+
+    expect(mocks.delete).not.toHaveBeenCalled()
+
+    heartbeatRequest.resolve({
+      status: 200,
+      data: { ...task, version: 6, leaseExpiresAt: '2026-07-24T08:17:00' },
+    })
+    await flushPromises()
+
+    expect(mocks.delete).toHaveBeenCalledWith('/api/moderation/videos/42/claim')
   })
 
   it('releases a held task and cleans up media', async () => {

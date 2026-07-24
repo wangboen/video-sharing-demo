@@ -48,7 +48,7 @@ button:focus-visible,
 a:focus-visible,
 input:focus-visible,
 textarea:focus-visible {
-  outline: 3px solid rgba(36, 87, 214, 0.32);
+  outline: 3px solid #173b8f;
   outline-offset: 3px;
 }
 
@@ -509,7 +509,7 @@ h3 {
   gap: 15px;
   min-height: 94px;
   margin-bottom: 28px;
-  color: var(--lease-amber);
+  color: var(--ink);
 }
 
 .lease-rail__line {
@@ -531,6 +531,7 @@ h3 {
 }
 
 .lease-rail strong {
+  color: var(--ink);
   font-size: 2rem;
   line-height: 1;
 }
