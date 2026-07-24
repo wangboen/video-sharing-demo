@@ -104,7 +104,7 @@ const handleLogout = async () => {
           </div>
           <p v-if="video.status === 'REJECTED' && video.rejectionReason?.trim()" class="submission-reason">驳回原因：{{ video.rejectionReason.trim() }}</p>
           <dl class="submission-times">
-            <div><dt>上传时间</dt><dd>{{ formatDate(video.uploadedAt || video.createdAt) }}</dd></div>
+            <div><dt>上传时间</dt><dd>{{ formatDate(video.uploadDate) }}</dd></div>
             <div v-if="video.reviewedAt"><dt>审核时间</dt><dd>{{ formatDate(video.reviewedAt) }}</dd></div>
           </dl>
         </article>

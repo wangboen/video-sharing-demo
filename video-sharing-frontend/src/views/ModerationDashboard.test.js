@@ -26,9 +26,9 @@ describe('moderation submissions dashboard', () => {
   it('loads every submission with Chinese status labels, rejection reason, and timestamps', async () => {
     mocks.get.mockResolvedValue({
       data: [
-        { id: 1, title: 'Pending video', status: 'PENDING', uploadedAt: '2026-07-24T10:00:00' },
-        { id: 2, title: 'Approved video', status: 'APPROVED', uploadedAt: '2026-07-23T10:00:00', reviewedAt: '2026-07-24T11:00:00' },
-        { id: 3, title: 'Rejected video', status: 'REJECTED', uploadedAt: '2026-07-22T10:00:00', reviewedAt: '2026-07-24T12:00:00', rejectionReason: '  Needs a clearer title  ' },
+        { id: 1, title: 'Pending video', status: 'PENDING', uploadDate: '2026-07-20T10:00:00' },
+        { id: 2, title: 'Approved video', status: 'APPROVED', uploadDate: '2026-07-21T10:00:00', reviewedAt: '2026-07-24T11:00:00' },
+        { id: 3, title: 'Rejected video', status: 'REJECTED', uploadDate: '2026-07-22T10:00:00', reviewedAt: '2026-07-24T12:00:00', rejectionReason: '  Needs a clearer title  ' },
       ],
     })
 
@@ -40,6 +40,7 @@ describe('moderation submissions dashboard', () => {
     expect(wrapper.text()).toContain('已通过')
     expect(wrapper.text()).toContain('已驳回')
     expect(wrapper.text()).toContain('Needs a clearer title')
+    expect(wrapper.text()).toContain('2026-07-20')
     expect(wrapper.text()).toContain('2026-07-24')
     expect(wrapper.text()).toContain('上传时间')
     expect(wrapper.text()).toContain('审核时间')

@@ -86,7 +86,7 @@ onBeforeUnmount(revokeThumbnailPreview);
       <dl class="upload-notes">
         <div><dt>01</dt><dd>选择你要发布的视频文件</dd></div>
         <div><dt>02</dt><dd>添加醒目的封面与内容简介</dd></div>
-        <div><dt>03</dt><dd>发布后可在视频列表中查看</dd></div>
+        <div><dt>03</dt><dd>提交审核后可在我的投稿中查看</dd></div>
       </dl>
     </section>
 

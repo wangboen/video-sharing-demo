@@ -1,3 +1,5 @@
+import { API_BASE_URL } from '../services/api'
+
 export const VIDEO_CATEGORIES = {
   全部: [],
   音乐: ['音乐', '歌曲', '演唱', 'music'],
@@ -8,11 +10,17 @@ export const VIDEO_CATEGORIES = {
 }
 
 export function getThumbnailUrl(video) {
-  return video?.thumbnailUrl || ''
+  return resolveMediaUrl(video?.thumbnailUrl)
 }
 
 export function getVideoUrl(video) {
-  return video?.videoUrl || ''
+  return resolveMediaUrl(video?.videoUrl)
+}
+
+function resolveMediaUrl(value) {
+  if (!value) return ''
+  if (/^(?:[a-z][a-z\d+.-]*:|\/\/)/i.test(value) || !API_BASE_URL) return value
+  return new URL(value, API_BASE_URL).toString()
 }
 
 export function formatViews(value) {

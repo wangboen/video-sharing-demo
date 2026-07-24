@@ -23,5 +23,6 @@ describe('upload moderation messaging', () => {
 
     expect(wrapper.text()).toContain('视频已提交审核')
     expect(wrapper.get('a[href="/dashboard"]').text()).toContain('查看我的投稿')
+    expect(wrapper.text()).toContain('提交审核后可在我的投稿中查看')
   })
 })
