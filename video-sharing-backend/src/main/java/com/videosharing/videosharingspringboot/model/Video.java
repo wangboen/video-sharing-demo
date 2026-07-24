@@ -34,4 +34,31 @@ public class Video {
     private LocalDateTime uploadDate;
 
     private Long views = 0L;
+
+    @Enumerated(EnumType.STRING)
+    @Column(length = 20)
+    private VideoStatus status = VideoStatus.PENDING;
+
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "reviewer_id")
+    private User reviewer;
+
+    @Column(name = "reviewed_at")
+    private LocalDateTime reviewedAt;
+
+    @Column(name = "rejection_reason", length = 500)
+    private String rejectionReason;
+
+    @Version
+    private Long version;
+
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "lease_owner_id")
+    private User leaseOwner;
+
+    @Column(name = "claimed_at")
+    private LocalDateTime claimedAt;
+
+    @Column(name = "lease_expires_at")
+    private LocalDateTime leaseExpiresAt;
 }

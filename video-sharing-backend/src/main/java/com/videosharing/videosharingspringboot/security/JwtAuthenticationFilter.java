@@ -5,6 +5,7 @@ import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
+import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.web.authentication.WebAuthenticationDetailsSource;
 import org.springframework.stereotype.Component;
@@ -12,16 +13,20 @@ import org.springframework.web.filter.OncePerRequestFilter;
 
 import java.io.IOException;
 import java.util.List;
+import com.videosharing.videosharingspringboot.repository.UserRepository;
 
 @Component
 public class JwtAuthenticationFilter extends OncePerRequestFilter {
 
     private final JwtService jwtService;
     private final RedisSessionService redisSessionService;
+    private final UserRepository userRepository;
 
-    public JwtAuthenticationFilter(JwtService jwtService, RedisSessionService redisSessionService) {
+    public JwtAuthenticationFilter(JwtService jwtService, RedisSessionService redisSessionService,
+                                   UserRepository userRepository) {
         this.jwtService = jwtService;
         this.redisSessionService = redisSessionService;
+        this.userRepository = userRepository;
     }
 
     @Override
@@ -37,10 +42,15 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
                 String sessionId = jwtService.extractSessionId(token);
                 Long userId = jwtService.extractUserId(token);
                 if (sessionId != null && userId != null && redisSessionService.isSessionActive(sessionId, userId)) {
-                    UsernamePasswordAuthenticationToken authentication =
-                            new UsernamePasswordAuthenticationToken(username, null, List.of());
-                    authentication.setDetails(new WebAuthenticationDetailsSource().buildDetails(request));
-                    SecurityContextHolder.getContext().setAuthentication(authentication);
+                    userRepository.findById(userId)
+                            .filter(user -> username.equals(user.getUsername()))
+                            .ifPresent(user -> {
+                                UsernamePasswordAuthenticationToken authentication =
+                                        new UsernamePasswordAuthenticationToken(username, null,
+                                                List.of(new SimpleGrantedAuthority("ROLE_" + user.getRole().name())));
+                                authentication.setDetails(new WebAuthenticationDetailsSource().buildDetails(request));
+                                SecurityContextHolder.getContext().setAuthentication(authentication);
+                            });
                 }
             }
         }

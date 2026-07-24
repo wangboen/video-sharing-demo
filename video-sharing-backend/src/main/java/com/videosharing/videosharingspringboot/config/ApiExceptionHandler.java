@@ -7,6 +7,8 @@ import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 
 import java.util.Map;
+import com.videosharing.videosharingspringboot.service.ModerationConflictException;
+import com.videosharing.videosharingspringboot.service.ModerationService;
 
 @RestControllerAdvice
 public class ApiExceptionHandler {
@@ -18,5 +20,20 @@ public class ApiExceptionHandler {
                 .map(error -> error.getDefaultMessage())
                 .orElse("Request validation failed");
         return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(Map.of("message", message));
+    }
+
+    @ExceptionHandler(ModerationConflictException.class)
+    public ResponseEntity<Map<String, String>> handleModerationConflict(ModerationConflictException exception) {
+        return ResponseEntity.status(HttpStatus.CONFLICT).body(Map.of("message", exception.getMessage()));
+    }
+
+    @ExceptionHandler(ModerationService.PreviewNotFoundException.class)
+    public ResponseEntity<Map<String, String>> handlePreviewNotFound(RuntimeException exception) {
+        return ResponseEntity.status(HttpStatus.NOT_FOUND).body(Map.of("message", exception.getMessage()));
+    }
+
+    @ExceptionHandler(IllegalArgumentException.class)
+    public ResponseEntity<Map<String, String>> handleBadRequest(IllegalArgumentException exception) {
+        return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(Map.of("message", exception.getMessage()));
     }
 }

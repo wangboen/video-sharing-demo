@@ -36,9 +36,12 @@ public class SecurityConfig {
                 .exceptionHandling(exceptions -> exceptions.authenticationEntryPoint(unauthorizedEntryPoint()))
                 .authorizeHttpRequests(authorize -> authorize
                         .requestMatchers(HttpMethod.OPTIONS, "/**").permitAll()
-                        .requestMatchers("/api/auth/register", "/api/auth/login", "/uploads/**", "/thumbnails/**").permitAll()
+                        .requestMatchers("/api/auth/register", "/api/auth/login", "/api/staff/auth/login",
+                                "/uploads/**", "/thumbnails/**").permitAll()
                         .requestMatchers(HttpMethod.GET, "/api/videos/**").permitAll()
-                        .requestMatchers("/api/videos/upload").authenticated()
+                        .requestMatchers("/api/admin/**").hasRole("ADMIN")
+                        .requestMatchers("/api/moderation/**").hasAnyRole("REVIEWER", "ADMIN")
+                        .requestMatchers("/api/videos/upload", "/api/users/me/videos").hasRole("USER")
                         .anyRequest().authenticated())
                 .addFilterBefore(jwtAuthenticationFilter, UsernamePasswordAuthenticationFilter.class)
                 .build();

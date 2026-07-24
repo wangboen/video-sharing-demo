@@ -73,6 +73,6 @@ public class UserController {
     private AuthResponse authResponse(String message, User user) {
         String token = jwtService.generateToken(user);
         redisSessionService.createSession(jwtService.extractSessionId(token), user.getId(), jwtService.getExpiration());
-        return new AuthResponse(message, token, user.getUsername(), user.getId(), user.getEmail());
+        return new AuthResponse(message, token, user.getUsername(), user.getId(), user.getEmail(), user.getRole());
     }
 }
