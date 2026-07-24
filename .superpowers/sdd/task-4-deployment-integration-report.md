@@ -42,9 +42,12 @@ Primary Task 4 implementation commit: `1592227bb2bbe5c2dc6ee03964a151573d5cf200`
 - `video-sharing-staff-frontend/src/deploymentContract.test.js`
 - `video-sharing-backend/src/main/java/com/videosharing/videosharingspringboot/security/SecurityConfig.java`
 - `video-sharing-backend/src/main/resources/application.properties`
+- `video-sharing-backend/src/main/resources/application-dev.properties`
 - `video-sharing-backend/src/main/resources/nginx.conf`
 - `video-sharing-backend/src/test/java/com/videosharing/videosharingspringboot/security/SecurityConfigCorsTest.java`
+- `video-sharing-backend/src/test/java/com/videosharing/videosharingspringboot/security/SecurityConfigConfiguredCorsTest.java`
 - `docs/deployment.md`
+- `.superpowers/sdd/task-4-deployment-integration-report.md`
 
 ## Self-review and concerns
 
