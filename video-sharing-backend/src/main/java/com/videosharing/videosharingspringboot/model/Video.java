@@ -4,6 +4,7 @@ import jakarta.persistence.*;
 import lombok.Data;
 import org.hibernate.annotations.CreationTimestamp;
 
+import java.time.Instant;
 import java.time.LocalDateTime;
 
 @Entity
@@ -44,12 +45,13 @@ public class Video {
     private User reviewer;
 
     @Column(name = "reviewed_at")
-    private LocalDateTime reviewedAt;
+    private Instant reviewedAt;
 
     @Column(name = "rejection_reason", length = 500)
     private String rejectionReason;
 
     @Version
+    @Column(nullable = false)
     private Long version;
 
     @ManyToOne(fetch = FetchType.LAZY)
@@ -57,8 +59,8 @@ public class Video {
     private User leaseOwner;
 
     @Column(name = "claimed_at")
-    private LocalDateTime claimedAt;
+    private Instant claimedAt;
 
     @Column(name = "lease_expires_at")
-    private LocalDateTime leaseExpiresAt;
+    private Instant leaseExpiresAt;
 }

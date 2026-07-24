@@ -26,7 +26,7 @@ import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.time.Clock;
 import java.time.Duration;
-import java.time.LocalDateTime;
+import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
@@ -34,6 +34,8 @@ import java.util.Optional;
 
 @Service
 public class ModerationService {
+    private static final Duration STAFF_HEARTBEAT_INTERVAL = Duration.ofSeconds(60);
+
     private final VideoRepository videos;
     private final UserRepository users;
     private final Path pendingVideos;
@@ -64,6 +66,10 @@ public class ModerationService {
                       Path publicThumbnails,
                       Duration leaseDuration,
                       Clock clock) {
+        if (leaseDuration == null || leaseDuration.compareTo(STAFF_HEARTBEAT_INTERVAL) <= 0) {
+            throw new IllegalArgumentException(
+                    "Moderation lease duration must be greater than the 60-second staff heartbeat interval");
+        }
         this.videos = videos;
         this.users = users;
         this.pendingVideos = normalize(pendingVideos);
@@ -76,7 +82,7 @@ public class ModerationService {
 
     @Transactional
     public Optional<ModerationVideoResponse> claimNext(String username) {
-        LocalDateTime now = now();
+        Instant now = now();
         User owner = users.findByUsernameForUpdate(username)
                 .orElseThrow(() -> new AccessDeniedException("Staff account not found"));
         if (owner.getRole() != Role.REVIEWER && owner.getRole() != Role.ADMIN) {
@@ -195,12 +201,24 @@ public class ModerationService {
             videos.saveAndFlush(video);
             restoreOnTransactionRollback(completed);
         } catch (IOException | RuntimeException exception) {
-            restore(completed);
+            IOException compensationFailure = null;
+            try {
+                restore(completed);
+            } catch (IOException restoreFailure) {
+                compensationFailure = restoreFailure;
+            }
             video.setStatus(VideoStatus.PENDING);
             video.setReviewer(null);
             video.setReviewedAt(null);
             video.setRejectionReason(null);
-            throw new ModerationConflictException("Could not publish approved media: " + exception.getMessage());
+            String message = compensationFailure == null
+                    ? "Could not publish approved media: " + exception.getMessage()
+                    : "Could not publish approved media and compensation failed: " + exception.getMessage();
+            ModerationConflictException failure = new ModerationConflictException(message, exception);
+            if (compensationFailure != null) {
+                failure.addSuppressed(compensationFailure);
+            }
+            throw failure;
         }
     }
 
@@ -225,23 +243,40 @@ public class ModerationService {
             @Override
             public void afterCompletion(int status) {
                 if (status != STATUS_COMMITTED) {
-                    restore(snapshot);
+                    try {
+                        restore(snapshot);
+                    } catch (IOException exception) {
+                        throw new IllegalStateException(
+                                "Approved media compensation failed after transaction rollback", exception);
+                    }
                 }
             }
         });
     }
 
-    private void restore(List<Move> completed) {
+    private void restore(List<Move> completed) throws IOException {
+        IOException firstFailure = null;
         for (int index = completed.size() - 1; index >= 0; index--) {
             Move move = completed.get(index);
             try {
                 Files.createDirectories(move.source().getParent());
-                if (Files.exists(move.target()) && !Files.exists(move.source())) {
-                    Files.move(move.target(), move.source());
+                boolean targetExists = Files.isRegularFile(move.target());
+                boolean sourceExists = Files.exists(move.source());
+                if (!targetExists || sourceExists) {
+                    throw new IOException("Unsafe compensation state for " + move.source().getFileName()
+                            + ": approved target must exist and pending source must be absent");
                 }
-            } catch (IOException ignored) {
-                // A failed compensation is surfaced by startup migration on the next boot.
+                Files.move(move.target(), move.source());
+            } catch (IOException exception) {
+                if (firstFailure == null) {
+                    firstFailure = exception;
+                } else {
+                    firstFailure.addSuppressed(exception);
+                }
             }
+        }
+        if (firstFailure != null) {
+            throw firstFailure;
         }
     }
 
@@ -251,7 +286,7 @@ public class ModerationService {
     }
 
     private void assertActiveOwner(Video video, String username) {
-        LocalDateTime now = now();
+        Instant now = now();
         if (video.getStatus() != VideoStatus.PENDING
                 || video.getLeaseOwner() == null
                 || !video.getLeaseOwner().getUsername().equals(username)
@@ -267,8 +302,8 @@ public class ModerationService {
         video.setLeaseExpiresAt(null);
     }
 
-    private LocalDateTime now() {
-        return LocalDateTime.now(clock);
+    private Instant now() {
+        return clock.instant();
     }
 
     private static Path normalize(Path path) {

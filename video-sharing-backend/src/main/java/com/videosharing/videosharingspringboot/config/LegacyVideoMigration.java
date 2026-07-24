@@ -6,6 +6,8 @@ import com.videosharing.videosharingspringboot.repository.VideoRepository;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.CommandLineRunner;
+import org.springframework.core.Ordered;
+import org.springframework.core.annotation.Order;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.support.TransactionSynchronization;
@@ -19,6 +21,7 @@ import java.util.ArrayList;
 import java.util.List;
 
 @Component
+@Order(Ordered.HIGHEST_PRECEDENCE + 2)
 public class LegacyVideoMigration implements CommandLineRunner {
     private final VideoRepository videos;
     private final Path publicVideos;
@@ -52,12 +55,15 @@ public class LegacyVideoMigration implements CommandLineRunner {
     @Transactional
     public void run(String... args) {
         List<Video> legacy = videos.findAllByStatusIsNull();
-        if (legacy.isEmpty()) {
+        List<Video> pending = videos.findAllByStatusOrderByUploadDateAscIdAsc(VideoStatus.PENDING);
+        if (legacy.isEmpty() && pending.isEmpty()) {
             return;
         }
 
+        List<Video> audited = new ArrayList<>(legacy);
+        audited.addAll(pending);
         List<FileState> states = new ArrayList<>();
-        for (Video video : legacy) {
+        for (Video video : audited) {
             states.add(validate(video.getFilePath(), publicVideos, pendingVideos));
             if (video.getThumbnailPath() != null) {
                 states.add(validate(video.getThumbnailPath(), publicThumbnails, pendingThumbnails));
@@ -74,7 +80,9 @@ public class LegacyVideoMigration implements CommandLineRunner {
                 }
             }
             legacy.forEach(video -> video.setStatus(VideoStatus.PENDING));
-            videos.saveAll(legacy);
+            if (!legacy.isEmpty()) {
+                videos.saveAll(legacy);
+            }
             restoreOnRollback(completed, legacy);
         } catch (IOException | RuntimeException exception) {
             restore(completed);

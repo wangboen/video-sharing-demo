@@ -3,6 +3,7 @@ package com.videosharing.videosharingspringboot.dto;
 import com.videosharing.videosharingspringboot.model.Video;
 import com.videosharing.videosharingspringboot.model.VideoStatus;
 
+import java.time.Instant;
 import java.time.LocalDateTime;
 
 public record ModerationVideoResponse(
@@ -13,8 +14,8 @@ public record ModerationVideoResponse(
         LocalDateTime uploadDate,
         VideoStatus status,
         Long version,
-        LocalDateTime claimedAt,
-        LocalDateTime leaseExpiresAt,
+        Instant claimedAt,
+        Instant leaseExpiresAt,
         boolean hasThumbnail
 ) {
     public static ModerationVideoResponse from(Video video) {

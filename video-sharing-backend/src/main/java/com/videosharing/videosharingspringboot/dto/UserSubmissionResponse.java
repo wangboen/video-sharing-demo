@@ -3,6 +3,7 @@ package com.videosharing.videosharingspringboot.dto;
 import com.videosharing.videosharingspringboot.model.Video;
 import com.videosharing.videosharingspringboot.model.VideoStatus;
 
+import java.time.Instant;
 import java.time.LocalDateTime;
 
 public record UserSubmissionResponse(
@@ -11,7 +12,7 @@ public record UserSubmissionResponse(
         String description,
         LocalDateTime uploadDate,
         VideoStatus status,
-        LocalDateTime reviewedAt,
+        Instant reviewedAt,
         String rejectionReason
 ) {
     public static UserSubmissionResponse from(Video video) {

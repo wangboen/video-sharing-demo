@@ -66,6 +66,62 @@ class LegacyVideoMigrationTest {
         assertThrows(IllegalStateException.class, migration()::run);
     }
 
+    @Test
+    void restartAuditMovesPendingMediaFoundOnlyInLegacyPublicStorage() throws Exception {
+        Video video = pending("video.mp4", "thumb.png");
+        when(videos.findAllByStatusOrderByUploadDateAscIdAsc(VideoStatus.PENDING))
+                .thenReturn(List.of(video));
+        Files.createDirectories(temp.resolve("public-videos"));
+        Files.createDirectories(temp.resolve("public-thumbnails"));
+        Files.writeString(temp.resolve("public-videos/video.mp4"), "video");
+        Files.writeString(temp.resolve("public-thumbnails/thumb.png"), "thumb");
+
+        migration().run();
+
+        assertTrue(Files.exists(temp.resolve("pending-videos/video.mp4")));
+        assertTrue(Files.exists(temp.resolve("pending-thumbnails/thumb.png")));
+        assertFalse(Files.exists(temp.resolve("public-videos/video.mp4")));
+        assertFalse(Files.exists(temp.resolve("public-thumbnails/thumb.png")));
+        verify(videos, never()).saveAll(any());
+    }
+
+    @Test
+    void restartAuditAcceptsPendingMediaOnlyInPrivateStorage() throws Exception {
+        Video video = pending("video.mp4", null);
+        when(videos.findAllByStatusOrderByUploadDateAscIdAsc(VideoStatus.PENDING))
+                .thenReturn(List.of(video));
+        Files.createDirectories(temp.resolve("pending-videos"));
+        Files.writeString(temp.resolve("pending-videos/video.mp4"), "video");
+
+        migration().run();
+
+        assertTrue(Files.exists(temp.resolve("pending-videos/video.mp4")));
+    }
+
+    @Test
+    void restartAuditFailsWhenPendingMediaExistsInBothPublicAndPrivateStorage() throws Exception {
+        Video video = pending("video.mp4", null);
+        when(videos.findAllByStatusOrderByUploadDateAscIdAsc(VideoStatus.PENDING))
+                .thenReturn(List.of(video));
+        Files.createDirectories(temp.resolve("public-videos"));
+        Files.createDirectories(temp.resolve("pending-videos"));
+        Files.writeString(temp.resolve("public-videos/video.mp4"), "video");
+        Files.writeString(temp.resolve("pending-videos/video.mp4"), "video");
+
+        assertThrows(IllegalStateException.class, migration()::run);
+    }
+
+    @Test
+    void restartAuditFailsWhenPendingThumbnailIsMissing() throws Exception {
+        Video video = pending("video.mp4", "thumb.png");
+        when(videos.findAllByStatusOrderByUploadDateAscIdAsc(VideoStatus.PENDING))
+                .thenReturn(List.of(video));
+        Files.createDirectories(temp.resolve("pending-videos"));
+        Files.writeString(temp.resolve("pending-videos/video.mp4"), "video");
+
+        assertThrows(IllegalStateException.class, migration()::run);
+    }
+
     private LegacyVideoMigration migration() {
         return new LegacyVideoMigration(videos,
                 temp.resolve("public-videos"), temp.resolve("public-thumbnails"),
@@ -77,6 +133,12 @@ class LegacyVideoMigrationTest {
         video.setStatus(null);
         video.setFilePath(file);
         video.setThumbnailPath(thumbnail);
+        return video;
+    }
+
+    private Video pending(String file, String thumbnail) {
+        Video video = legacy(file, thumbnail);
+        video.setStatus(VideoStatus.PENDING);
         return video;
     }
 }

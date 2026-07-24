@@ -3,12 +3,12 @@ package com.videosharing.videosharingspringboot.dto;
 import com.videosharing.videosharingspringboot.model.Video;
 import com.videosharing.videosharingspringboot.model.VideoStatus;
 
-import java.time.LocalDateTime;
+import java.time.Instant;
 
 public record ModerationDecisionResponse(
         Long id,
         VideoStatus status,
-        LocalDateTime reviewedAt,
+        Instant reviewedAt,
         String rejectionReason,
         Long version
 ) {

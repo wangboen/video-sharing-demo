@@ -14,6 +14,7 @@ import org.springframework.mock.web.MockMultipartFile;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.test.util.ReflectionTestUtils;
 
+import java.time.Instant;
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Optional;
@@ -45,7 +46,7 @@ class VideoControllerSafeResponseTest {
     void pendingUploadResponseContainsNoStorageOrModerationInternals() throws Exception {
         Video pending = video(VideoStatus.PENDING);
         pending.setLeaseOwner(staff());
-        pending.setLeaseExpiresAt(LocalDateTime.of(2026, 7, 24, 13, 0));
+        pending.setLeaseExpiresAt(Instant.parse("2026-07-24T05:00:00Z"));
         var authentication = new UsernamePasswordAuthenticationToken("creator", null);
         var file = new MockMultipartFile("file", "video.mp4", "video/mp4", "video".getBytes());
         when(users.findByUsername("creator")).thenReturn(Optional.of(creator));

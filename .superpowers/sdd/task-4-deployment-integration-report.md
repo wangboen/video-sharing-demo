@@ -99,3 +99,21 @@ the repository's `.superpowers/` ignore rule.
   - staff frontend `npm.cmd ci --ignore-scripts`: passed;
   - staff frontend `npm.cmd test`: 10 files, 42 passed;
   - staff frontend `npm.cmd run build`: passed.
+
+## Task 5 security supersession
+
+The verification counts above are historical Task 4 evidence. Task 5 changes
+the deployment inventory and records the current whole-branch verification in
+`.superpowers/sdd/task-5-final-security-fixes-report.md`.
+
+- Default datasource configuration now requires `DB_URL`, `DB_USERNAME`, and
+  `DB_PASSWORD`; localhost/root values exist only in the explicit dev profile.
+- The supplied Nginx server no longer presents public HTTP/80. It listens only
+  on `127.0.0.1:8081` behind a mandatory TLS terminator, preserves incoming
+  host/proto metadata, and sends `nosniff` on approved media.
+- Deployment documentation now identifies mandatory production variables,
+  private listener requirements, the optimistic-version backfill, the complete
+  PENDING-media startup audit, and the minimum safe lease duration.
+- The Task 4 files additionally revised by Task 5 are
+  `application.properties`, `application-dev.properties`, `nginx.conf`,
+  `src/deploymentContract.test.js`, and `docs/deployment.md`.

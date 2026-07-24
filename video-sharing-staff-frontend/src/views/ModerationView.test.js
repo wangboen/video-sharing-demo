@@ -28,8 +28,8 @@ const task = {
   uploader: 'camera-user',
   uploadDate: '2026-07-23T10:00:00',
   version: 4,
-  claimedAt: '2026-07-24T08:00:00',
-  leaseExpiresAt: '2026-07-24T08:15:00',
+  claimedAt: '2026-07-24T00:00:00Z',
+  leaseExpiresAt: '2026-07-24T00:15:00Z',
   hasThumbnail: true,
 }
 
@@ -136,7 +136,7 @@ describe('moderation claim workbench', () => {
     const wrapper = await mountClaimed()
     mocks.post.mockResolvedValueOnce({
       status: 200,
-      data: { ...task, version: 5, leaseExpiresAt: '2026-07-24T08:16:00' },
+      data: { ...task, version: 5, leaseExpiresAt: '2026-07-24T00:16:00Z' },
     })
 
     await vi.advanceTimersByTimeAsync(60_000)
@@ -181,7 +181,7 @@ describe('moderation claim workbench', () => {
 
     heartbeatRequest.resolve({
       status: 200,
-      data: { ...task, version: 8, leaseExpiresAt: '2026-07-24T08:18:00' },
+      data: { ...task, version: 8, leaseExpiresAt: '2026-07-24T00:18:00Z' },
     })
     await flushPromises()
 
@@ -205,7 +205,7 @@ describe('moderation claim workbench', () => {
 
     heartbeatRequest.resolve({
       status: 200,
-      data: { ...task, version: 6, leaseExpiresAt: '2026-07-24T08:17:00' },
+      data: { ...task, version: 6, leaseExpiresAt: '2026-07-24T00:17:00Z' },
     })
     await flushPromises()
 

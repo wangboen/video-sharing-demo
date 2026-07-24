@@ -37,13 +37,13 @@ class ModerationServiceTest {
     private ModerationService service;
     private User reviewer;
     private User other;
-    private final LocalDateTime now = LocalDateTime.of(2026, 7, 24, 12, 0);
+    private final Instant now = Instant.parse("2026-07-24T12:00:00Z");
 
     @BeforeEach
     void setUp() {
         reviewer = user(1L, "reviewer", Role.REVIEWER);
         other = user(2L, "other", Role.REVIEWER);
-        Clock clock = Clock.fixed(now.toInstant(ZoneOffset.UTC), ZoneOffset.UTC);
+        Clock clock = Clock.fixed(now, ZoneOffset.UTC);
         service = new ModerationService(videos, users, temp.resolve("pending-videos"),
                 temp.resolve("pending-thumbnails"), temp.resolve("public-videos"),
                 temp.resolve("public-thumbnails"), Duration.ofMinutes(15), clock);
@@ -53,12 +53,23 @@ class ModerationServiceTest {
     void claimReturnsExistingActiveLeaseForSameReviewer() {
         Video leased = pending(10L);
         leased.setLeaseOwner(reviewer);
-        leased.setLeaseExpiresAt(now.plusMinutes(1));
+        leased.setLeaseExpiresAt(now.plusSeconds(60));
         when(users.findByUsernameForUpdate("reviewer")).thenReturn(Optional.of(reviewer));
         when(videos.findActiveLeaseForOwner(1L, VideoStatus.PENDING, now)).thenReturn(Optional.of(leased));
 
         assertEquals(10L, service.claimNext("reviewer").orElseThrow().id());
         verify(videos, never()).findClaimableForUpdate(any(), any(), any());
+    }
+
+    @Test
+    void leaseDurationMustBeLongerThanTheFixedSixtySecondHeartbeat() {
+        IllegalArgumentException failure = assertThrows(IllegalArgumentException.class,
+                () -> new ModerationService(videos, users, temp.resolve("pending-videos"),
+                        temp.resolve("pending-thumbnails"), temp.resolve("public-videos"),
+                        temp.resolve("public-thumbnails"), Duration.ofSeconds(60),
+                        Clock.fixed(now, ZoneOffset.UTC)));
+
+        assertTrue(failure.getMessage().contains("greater than the 60-second staff heartbeat"));
     }
 
     @Test
@@ -74,14 +85,14 @@ class ModerationServiceTest {
 
         assertEquals(10L, claimed.id());
         assertEquals(reviewer, oldest.getLeaseOwner());
-        assertEquals(now.plusMinutes(15), oldest.getLeaseExpiresAt());
+        assertEquals(now.plusSeconds(15 * 60), oldest.getLeaseExpiresAt());
     }
 
     @Test
     void heartbeatRejectsNonOwner() {
         Video leased = pending(10L);
         leased.setLeaseOwner(other);
-        leased.setLeaseExpiresAt(now.plusMinutes(1));
+        leased.setLeaseExpiresAt(now.plusSeconds(60));
         when(videos.findByIdForUpdate(10L)).thenReturn(Optional.of(leased));
 
         assertThrows(ModerationConflictException.class, () -> service.heartbeat(10L, "reviewer"));
@@ -96,15 +107,15 @@ class ModerationServiceTest {
 
         var response = service.heartbeat(10L, "reviewer");
 
-        assertEquals(now.plusMinutes(15), response.leaseExpiresAt());
+        assertEquals(now.plusSeconds(15 * 60), response.leaseExpiresAt());
     }
 
     @Test
     void ownReleaseClearsLease() {
         Video leased = pending(10L);
         leased.setLeaseOwner(reviewer);
-        leased.setLeaseExpiresAt(now.plusMinutes(1));
-        leased.setClaimedAt(now.minusMinutes(1));
+        leased.setLeaseExpiresAt(now.plusSeconds(60));
+        leased.setClaimedAt(now.minusSeconds(60));
         when(videos.findByIdForUpdate(10L)).thenReturn(Optional.of(leased));
         when(videos.save(leased)).thenReturn(leased);
 
@@ -127,8 +138,8 @@ class ModerationServiceTest {
     void adminMayForceReleaseAnotherReviewersLease() {
         Video leased = pending(10L);
         leased.setLeaseOwner(other);
-        leased.setClaimedAt(now.minusMinutes(1));
-        leased.setLeaseExpiresAt(now.plusMinutes(1));
+        leased.setClaimedAt(now.minusSeconds(60));
+        leased.setLeaseExpiresAt(now.plusSeconds(60));
         when(videos.findByIdForUpdate(10L)).thenReturn(Optional.of(leased));
         when(videos.save(leased)).thenReturn(leased);
 
@@ -230,6 +241,31 @@ class ModerationServiceTest {
     }
 
     @Test
+    void approvalFailsLoudlyAndPreservesOriginalCauseWhenCompensationCannotReverseMove() throws Exception {
+        Video leased = activeLease();
+        leased.setVersion(4L);
+        leased.setFilePath("video.mp4");
+        Files.createDirectories(temp.resolve("pending-videos"));
+        Files.writeString(temp.resolve("pending-videos/video.mp4"), "video");
+        when(videos.findByIdForUpdate(10L)).thenReturn(Optional.of(leased));
+        RuntimeException databaseFailure = new RuntimeException("database commit failed");
+        when(videos.saveAndFlush(leased)).thenAnswer(invocation -> {
+            Files.writeString(temp.resolve("pending-videos/video.mp4"), "collision");
+            throw databaseFailure;
+        });
+
+        ModerationConflictException failure = assertThrows(ModerationConflictException.class,
+                () -> service.decide(10L, "reviewer", decision("APPROVE", null, 4L)));
+
+        assertTrue(failure.getMessage().contains("compensation failed"));
+        assertSame(databaseFailure, failure.getCause());
+        assertEquals(1, failure.getSuppressed().length);
+        assertTrue(failure.getSuppressed()[0].getMessage().contains("Unsafe compensation state"));
+        assertTrue(Files.exists(temp.resolve("public-videos/video.mp4")));
+        assertTrue(Files.exists(temp.resolve("pending-videos/video.mp4")));
+    }
+
+    @Test
     void duplicateDecisionIsConflict() {
         Video decided = pending(10L);
         decided.setStatus(VideoStatus.APPROVED);
@@ -241,7 +277,7 @@ class ModerationServiceTest {
     private Video activeLease() {
         Video video = pending(10L);
         video.setLeaseOwner(reviewer);
-        video.setLeaseExpiresAt(now.plusMinutes(1));
+        video.setLeaseExpiresAt(now.plusSeconds(60));
         return video;
     }
 
@@ -250,7 +286,7 @@ class ModerationServiceTest {
         video.setId(id);
         video.setStatus(VideoStatus.PENDING);
         video.setVersion(0L);
-        video.setUploadDate(now.minusHours(1));
+        video.setUploadDate(LocalDateTime.of(2026, 7, 24, 11, 0));
         video.setUser(user(9L, "creator", Role.USER));
         video.setTitle("Title");
         return video;

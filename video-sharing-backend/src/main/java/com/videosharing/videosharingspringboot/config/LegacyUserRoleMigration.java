@@ -10,7 +10,7 @@ import javax.sql.DataSource;
 import java.sql.SQLException;
 
 @Component
-@Order(Ordered.HIGHEST_PRECEDENCE)
+@Order(Ordered.HIGHEST_PRECEDENCE + 1)
 public class LegacyUserRoleMigration implements CommandLineRunner {
     private final JdbcTemplate jdbc;
     private final DataSource dataSource;

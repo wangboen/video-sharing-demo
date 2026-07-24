@@ -14,6 +14,7 @@ const applicationDevPropertiesPath = resolve(
   process.cwd(),
   '../video-sharing-backend/src/main/resources/application-dev.properties',
 )
+const applicationDevProperties = readFileSync(applicationDevPropertiesPath, 'utf8')
 const deploymentGuide = readFileSync(resolve(process.cwd(), '../docs/deployment.md'), 'utf8')
 
 describe('same-origin Nginx deployment contract', () => {
@@ -27,6 +28,26 @@ describe('same-origin Nginx deployment contract', () => {
     expect(nginx).toMatch(/location\s+\/uploads\/\s*\{[\s\S]*?alias\s+\/srv\/video-sharing\/public\/uploads\//)
     expect(nginx).toMatch(/location\s+\/thumbnails\/\s*\{[\s\S]*?alias\s+\/srv\/video-sharing\/public\/thumbnails\//)
     expect(nginx).toContain('add_header Accept-Ranges bytes')
+  })
+
+  it('adds nosniff to every approved public media response', () => {
+    const uploadsBlock = nginx.match(/location\s+\/uploads\/\s*\{([\s\S]*?)\}/)
+    const thumbnailsBlock = nginx.match(/location\s+\/thumbnails\/\s*\{([\s\S]*?)\}/)
+
+    expect(uploadsBlock?.[1]).toMatch(/add_header\s+X-Content-Type-Options\s+nosniff\s+always;/)
+    expect(thumbnailsBlock?.[1]).toMatch(/add_header\s+X-Content-Type-Options\s+nosniff\s+always;/)
+  })
+
+  it('binds only to a loopback non-public port behind the mandatory TLS terminator', () => {
+    expect(nginx).toMatch(/listen\s+127\.0\.0\.1:8081;/)
+    expect(nginx).not.toMatch(/listen\s+(?:80|0\.0\.0\.0)/)
+    expect(nginx).toMatch(/proxy_set_header\s+Host\s+\$http_host;/)
+    expect(nginx).toMatch(/proxy_set_header\s+X-Forwarded-Proto\s+\$http_x_forwarded_proto;/)
+    expect(deploymentGuide).toContain('TLS terminator or load balancer is mandatory')
+    expect(deploymentGuide).toContain('127.0.0.1:8081')
+    expect(deploymentGuide).toContain('Host')
+    expect(deploymentGuide).toContain('X-Forwarded-Proto')
+    expect(deploymentGuide).toContain('must not be publicly exposed')
   })
 
   it('denies pending media without a filesystem alias', () => {
@@ -46,9 +67,21 @@ describe('same-origin Nginx deployment contract', () => {
   it('requires JWT_SECRET by default and confines the development secret to the dev profile', () => {
     expect(applicationProperties).toMatch(/^jwt\.secret=\$\{JWT_SECRET\}$/m)
     expect(existsSync(applicationDevPropertiesPath)).toBe(true)
-    const applicationDevProperties = readFileSync(applicationDevPropertiesPath, 'utf8')
     expect(applicationDevProperties).toMatch(/^jwt\.secret=development-only-/m)
     expect(deploymentGuide).toContain('SPRING_PROFILES_ACTIVE=dev')
+  })
+
+  it('requires production datasource variables and confines local root defaults to dev', () => {
+    expect(applicationProperties).toMatch(/^spring\.datasource\.url=\$\{DB_URL\}$/m)
+    expect(applicationProperties).toMatch(/^spring\.datasource\.username=\$\{DB_USERNAME\}$/m)
+    expect(applicationProperties).toMatch(/^spring\.datasource\.password=\$\{DB_PASSWORD\}$/m)
+    expect(applicationProperties).not.toMatch(/^spring\.datasource\..*(?:localhost|useSSL=false|=root)$/m)
+    expect(applicationDevProperties).toMatch(/^spring\.datasource\.url=jdbc:mysql:\/\/localhost:/m)
+    expect(applicationDevProperties).toMatch(/^spring\.datasource\.username=root$/m)
+    expect(applicationDevProperties).toMatch(/^spring\.datasource\.password=root$/m)
+    expect(deploymentGuide).toContain('DB_URL')
+    expect(deploymentGuide).toContain('DB_USERNAME')
+    expect(deploymentGuide).toContain('DB_PASSWORD')
   })
 
   it('documents media paths that match the Nginx public mounts and keep pending files private', () => {
