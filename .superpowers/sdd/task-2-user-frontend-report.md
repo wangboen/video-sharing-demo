@@ -62,3 +62,16 @@ npm.cmd run build vite production build completed successfully
 ```
 
 Review-fix implementation commit: `7748640` (`fix: align user moderation DTO handling`).
+
+## Configuration decoupling follow-up
+
+The API base URL now lives in `src/config/api.js`, which is imported by both the Axios service and video URL helpers. This prevents view/component tests that mock `services/api.js` from coupling to configuration exports.
+
+TDD evidence: the new `src/config/api.test.js` first failed because the config module did not exist, then passed with the focused safe-media test.
+
+```text
+npm.cmd test      22 test files passed, 69 tests passed
+npm.cmd run build vite production build completed successfully
+```
+
+Configuration-refactor implementation commit: `55d205a` (`refactor: share API base configuration`).
