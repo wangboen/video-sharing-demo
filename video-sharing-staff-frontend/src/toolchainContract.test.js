@@ -10,6 +10,11 @@ function requestedMajor(range) {
 }
 
 describe('staff toolchain contract', () => {
+  it('uses port 5174 so the staff application can run alongside the user application', () => {
+    const viteConfig = readFileSync(resolve(process.cwd(), 'vite.config.js'), 'utf8')
+    expect(viteConfig).toMatch(/server:\s*\{\s*port:\s*5174\s*,?\s*\}/)
+  })
+
   it('keeps Vite 5, plugin-vue 5, and a Vite-5-compatible Vitest major aligned', () => {
     expect(requestedMajor(packageJson.devDependencies.vite)).toBe(5)
     expect(requestedMajor(packageJson.devDependencies['@vitejs/plugin-vue'])).toBe(5)
