@@ -1,6 +1,7 @@
 # Local agent tooling
 .agents/
 .superpowers/
+.worktrees/
 
 # IDE and operating system files
 .idea/
