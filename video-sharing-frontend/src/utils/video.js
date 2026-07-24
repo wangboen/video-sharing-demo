@@ -17,6 +17,10 @@ export function getVideoUrl(video) {
   return resolveMediaUrl(video?.videoUrl)
 }
 
+export function getAuthorName(video) {
+  return video?.uploader || video?.user?.username || ''
+}
+
 function resolveMediaUrl(value) {
   if (!value) return ''
   if (/^(?:[a-z][a-z\d+.-]*:|\/\/)/i.test(value) || !API_BASE_URL) return value
@@ -48,7 +52,7 @@ export function matchesSearch(video, query) {
   const normalizedQuery = String(query ?? '').trim().toLowerCase()
   if (!normalizedQuery) return true
 
-  const searchableText = [video?.title, video?.description, video?.user?.username]
+  const searchableText = [video?.title, video?.description, getAuthorName(video)]
     .map((value) => String(value ?? ''))
     .join(' ')
     .toLowerCase()

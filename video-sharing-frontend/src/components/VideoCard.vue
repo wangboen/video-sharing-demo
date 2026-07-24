@@ -1,6 +1,6 @@
 <script setup>
 import { computed, ref } from 'vue'
-import { formatDate, formatViews, getThumbnailUrl } from '../utils/video'
+import { formatDate, formatViews, getAuthorName, getThumbnailUrl } from '../utils/video'
 
 const props = defineProps({
   video: {
@@ -12,7 +12,7 @@ const props = defineProps({
 const imageFailed = ref(false)
 const thumbnailUrl = computed(() => getThumbnailUrl(props.video))
 const shouldShowImage = computed(() => Boolean(thumbnailUrl.value) && !imageFailed.value)
-const authorName = computed(() => props.video?.user?.username || '匿名用户')
+const authorName = computed(() => getAuthorName(props.video) || '匿名用户')
 const authorInitial = computed(() => authorName.value.trim().charAt(0).toUpperCase() || '视')
 const publishDate = computed(() => props.video?.createdAt ?? props.video?.uploadDate ?? props.video?.date)
 </script>

@@ -45,7 +45,7 @@ function video(id, title = `video-${id}`) {
     views: 12,
     createdAt: '2026-07-20T00:00:00.000Z',
     description: `${title} description`,
-    user: { username: `${title} author`, bio: `${title} bio` },
+    uploader: `${title} safe author`,
   }
 }
 
@@ -128,6 +128,17 @@ describe('VideoPlayer', () => {
     await flushPromises()
 
     expect(wrapper.get('.local-action-note').text()).toContain('仅在当前页面和本次浏览中有效')
+  })
+
+  it('displays the safe DTO uploader as the current video author', async () => {
+    mocks.get
+      .mockResolvedValueOnce({ data: video('A', 'current video') })
+      .mockResolvedValueOnce({ data: [video('B')] })
+
+    const wrapper = mount(VideoPlayer, { global })
+    await flushPromises()
+
+    expect(wrapper.get('.author-panel__name').text()).toBe('current video safe author')
   })
 
   it('shows the full page error state when the current video request fails', async () => {

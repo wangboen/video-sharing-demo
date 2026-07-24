@@ -20,14 +20,14 @@ describe('VideoListItem', () => {
           id: 9,
           title: '夜晚城市',
           thumbnailUrl: '/media/city-night.jpg',
-          user: { username: '小林' },
+          uploader: 'Safe list author',
         },
       },
     })
 
     expect(wrapper.get('img').attributes('src')).toBe('http://localhost:8080/media/city-night.jpg')
     expect(wrapper.text()).toContain('夜晚城市')
-    expect(wrapper.text()).toContain('小林')
+    expect(wrapper.text()).toContain('Safe list author')
     expect(wrapper.get('a').attributes('href')).toBe('/video/9')
   })
 

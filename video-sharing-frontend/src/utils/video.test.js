@@ -32,7 +32,8 @@ describe('video utilities', () => {
     expect(formatDate('2026-07-20T00:15:00')).toBe('2026-07-20')
   })
 
-  it('matches a case-insensitive query against title, description, and username', () => {
+  it('matches a case-insensitive query against title, description, and safe uploader', () => {
+    expect(matchesSearch({ title: '城市漫步', description: '', uploader: 'Safe Uploader', user: { username: 'legacy-user' } }, 'safe uploader')).toBe(true)
     expect(matchesSearch({ title: '城市漫步', description: '', user: { username: '小林' } }, '小林')).toBe(true)
     expect(matchesSearch({ title: 'Vue 教程', description: '组件实战', user: { username: 'Codex' } }, 'vue')).toBe(true)
     expect(matchesSearch({ title: '城市漫步', description: '', user: { username: '小林' } }, '摄影')).toBe(false)

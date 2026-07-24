@@ -19,6 +19,7 @@ describe('VideoCard', () => {
         video: {
           id: 7,
           title: '没有缩略图的视频',
+          uploader: 'Safe card author',
           user: { username: '小林' },
         },
       },
@@ -26,6 +27,8 @@ describe('VideoCard', () => {
     })
 
     expect(wrapper.get('[data-testid="thumbnail-placeholder"]').text()).toContain('视界')
+    expect(wrapper.text()).toContain('Safe card author')
+    expect(wrapper.text()).not.toContain('小林')
     expect(wrapper.text()).toContain('暂无播放数据')
     expect(wrapper.get('.video-card__title').attributes('href')).toBe('/video/7')
   })

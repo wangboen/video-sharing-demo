@@ -5,7 +5,7 @@ import ErrorState from '../components/ErrorState.vue'
 import LoadingState from '../components/LoadingState.vue'
 import VideoListItem from '../components/VideoListItem.vue'
 import api from '../services/api'
-import { formatDate, formatViews, getThumbnailUrl, getVideoUrl } from '../utils/video'
+import { formatDate, formatViews, getAuthorName, getThumbnailUrl, getVideoUrl } from '../utils/video'
 
 const route = useRoute()
 const video = ref(null)
@@ -18,7 +18,7 @@ const liked = ref(false)
 const saved = ref(false)
 let latestRequestVersion = 0
 
-const authorName = computed(() => video.value?.user?.username || '匿名创作者')
+const authorName = computed(() => getAuthorName(video.value) || '匿名创作者')
 const authorInitial = computed(() => authorName.value.trim().charAt(0).toUpperCase() || '视')
 const publishDate = computed(() => video.value?.createdAt ?? video.value?.uploadDate ?? video.value?.date)
 const authorBio = computed(() => video.value?.user?.bio || video.value?.user?.description || '这个创作者暂未留下简介。')
