@@ -19,11 +19,17 @@ the backend database and Redis connection properties for the deployed services.
 Set `JWT_SECRET` to a unique, securely generated production secret; there is no
 safe production fallback. Configure the initial administrator only with all of
 `ADMIN_USERNAME`, `ADMIN_EMAIL`, and `ADMIN_PASSWORD` (or leave all three unset).
+For local development only, activate the explicit profile with
+`SPRING_PROFILES_ACTIVE=dev`; it supplies a development JWT secret and must not
+be used in production.
 
-Set public media directories with `FILE_UPLOAD_DIR` and
-`FILE_THUMBNAIL_DIR`, and private review directories with `PENDING_UPLOAD_DIR`
-and `PENDING_THUMBNAIL_DIR`; the pending directories must not be mounted by
-Nginx.
+Configure the media paths to match the supplied Nginx mounts exactly:
+`FILE_UPLOAD_DIR=/srv/video-sharing/public/uploads` and
+`FILE_THUMBNAIL_DIR=/srv/video-sharing/public/thumbnails`. Keep private review
+files outside those aliases with
+`PENDING_UPLOAD_DIR=/srv/video-sharing/private/pending/uploads` and
+`PENDING_THUMBNAIL_DIR=/srv/video-sharing/private/pending/thumbnails`; the
+pending directories must not be mounted by Nginx.
 
 Set `MODERATION_LEASE_DURATION_MINUTES` for moderation claim duration. When
 cross-origin development is needed, set `CORS_ALLOWED_ORIGINS` to a comma-
