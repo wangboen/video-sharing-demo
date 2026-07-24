@@ -75,3 +75,16 @@ npm.cmd run build vite production build completed successfully
 ```
 
 Configuration-refactor implementation commit: `55d205a` (`refactor: share API base configuration`).
+
+## Safe DTO uploader follow-up
+
+Safe public-video fixtures now prove that cards, recommendation list items, the player author panel, and author-name search use `uploader`. A shared `getAuthorName` helper prefers `uploader` and retains the nested `user.username` fallback for legacy data.
+
+TDD evidence: the safe-uploader card, list, player, and search tests first failed in all four surfaces, then passed (4 files, 19 tests).
+
+```text
+npm.cmd test      22 test files passed, 70 tests passed
+npm.cmd run build vite production build completed successfully
+```
+
+Safe-uploader implementation commit: `ba09a16` (`fix: support safe DTO uploaders`).
