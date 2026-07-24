@@ -110,6 +110,62 @@ class VideoServiceStorageTest {
     }
 
     @Test
+    void rejectsHeaderOnlyAndTruncatedWebpContainersInsteadOfTrustingChunkPrefixes() {
+        assertRejected(upload("file", "video.mp4", "video/mp4", mp4()),
+                upload("thumbnail", "header-only.webp", "image/webp",
+                        MediaFixtures.webpHeaderOnly()));
+        byte[] truncated = java.util.Arrays.copyOf(
+                MediaFixtures.webp(), MediaFixtures.webp().length - 1);
+        assertRejected(upload("file", "video.mp4", "video/mp4", mp4()),
+                upload("thumbnail", "truncated.webp", "image/webp", truncated));
+    }
+
+    @Test
+    void enforcesWebpPixelLimitForVp8Vp8lAndVp8xHeaders() {
+        for (byte[] oversized : List.of(
+                MediaFixtures.oversizedVp8Webp(),
+                MediaFixtures.oversizedVp8lWebp(),
+                MediaFixtures.oversizedVp8xWebp())) {
+            IllegalArgumentException failure = rejected(
+                    upload("file", "video.mp4", "video/mp4", mp4()),
+                    upload("thumbnail", "oversized.webp", "image/webp", oversized));
+            assertTrue(failure.getMessage().contains("dimensions are invalid or too large"));
+        }
+    }
+
+    @Test
+    void rejectsCompleteOggPageFollowedByATruncatedSecondPage() {
+        assertRejected(upload("file", "truncated-second-page.ogv", "video/ogg",
+                concat(MediaFixtures.ogg(), bytes('O', 'g', 'g', 'S', 0))), null);
+    }
+
+    @Test
+    void acceptsMultipleCompleteOggPagesEndingExactlyAtEof() throws Exception {
+        when(repository.save(any())).thenAnswer(invocation -> invocation.getArgument(0));
+
+        Video saved = service().uploadVideo(user(), "Title", "Description",
+                upload("file", "multi-page.ogv", "video/ogg",
+                        concat(MediaFixtures.ogg(), MediaFixtures.ogg())), null);
+
+        assertTrue(saved.getFilePath().endsWith(".ogv"));
+    }
+
+    @Test
+    void rejectsTruncatedOggSegmentTableAndBodySizes() {
+        byte[] truncatedTable = new byte[28];
+        System.arraycopy(MediaFixtures.ogg(), 0, truncatedTable, 0, 27);
+        truncatedTable[26] = 2;
+        truncatedTable[27] = 1;
+        byte[] truncatedBody = new byte[28];
+        System.arraycopy(MediaFixtures.ogg(), 0, truncatedBody, 0, 27);
+        truncatedBody[26] = 1;
+        truncatedBody[27] = 5;
+
+        assertRejected(upload("file", "truncated-table.ogv", "video/ogg", truncatedTable), null);
+        assertRejected(upload("file", "truncated-body.ogv", "video/ogg", truncatedBody), null);
+    }
+
+    @Test
     void streamsLargeUploadsWithoutCallingGetBytesOrLeavingTemporaryFiles() throws Exception {
         when(repository.save(any())).thenAnswer(invocation -> invocation.getArgument(0));
         long payloadSize = 8L * 1024 * 1024;
@@ -208,11 +264,16 @@ class VideoServiceStorageTest {
     }
 
     private void assertRejected(MockMultipartFile video, MockMultipartFile thumbnail) {
-        assertThrows(IllegalArgumentException.class,
+        rejected(video, thumbnail);
+    }
+
+    private IllegalArgumentException rejected(MockMultipartFile video, MockMultipartFile thumbnail) {
+        IllegalArgumentException failure = assertThrows(IllegalArgumentException.class,
                 () -> service().uploadVideo(user(), "Title", "Description", video, thumbnail));
         assertDirectoryEmpty(temp.resolve("pending-videos"));
         assertDirectoryEmpty(temp.resolve("pending-thumbnails"));
         verify(repository, never()).save(any());
+        return failure;
     }
 
     private static MockMultipartFile upload(String field, String fileName, String contentType, byte[] content) {

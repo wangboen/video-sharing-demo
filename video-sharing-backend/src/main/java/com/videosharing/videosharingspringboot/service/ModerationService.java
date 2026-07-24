@@ -12,8 +12,8 @@ import com.videosharing.videosharingspringboot.repository.VideoRepository;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.core.io.PathResource;
-import org.springframework.core.io.Resource;
 import org.springframework.data.domain.PageRequest;
+import org.springframework.http.MediaType;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.PlatformTransactionManager;
@@ -153,7 +153,7 @@ public class ModerationService {
     }
 
     @Transactional(readOnly = true)
-    public Resource preview(Long id, String username, boolean thumbnail) {
+    public ModerationPreview preview(Long id, String username, boolean thumbnail) {
         Video video = videos.findById(id)
                 .orElseThrow(() -> new ModerationConflictException("Video not found"));
         assertActiveOwner(video, username);
@@ -165,7 +165,18 @@ public class ModerationService {
         if (!Files.isRegularFile(path)) {
             throw new PreviewNotFoundException("Preview not found");
         }
-        return new PathResource(path);
+        try {
+            MediaFileValidator.MediaFormat format = MediaFileValidator.inspect(
+                    path, thumbnail
+                            ? MediaFileValidator.MediaKind.THUMBNAIL
+                            : MediaFileValidator.MediaKind.VIDEO);
+            return new ModerationPreview(
+                    new PathResource(path),
+                    MediaType.parseMediaType(format.mediaType()),
+                    "preview" + format.serverExtension());
+        } catch (IOException | IllegalArgumentException exception) {
+            throw new PreviewNotFoundException("Preview not found");
+        }
     }
 
     public ModerationDecisionResponse decide(Long id, String username, ModerationDecisionRequest request) {

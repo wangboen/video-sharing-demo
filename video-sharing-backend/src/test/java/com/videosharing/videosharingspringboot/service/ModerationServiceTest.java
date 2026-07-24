@@ -160,6 +160,47 @@ class ModerationServiceTest {
     }
 
     @Test
+    void previewRejectsActiveLegacyVideoAndThumbnailContent() throws Exception {
+        Video leased = activeLease();
+        leased.setFilePath("legacy.html");
+        leased.setThumbnailPath("legacy.svg");
+        Files.createDirectories(temp.resolve("pending-videos"));
+        Files.createDirectories(temp.resolve("pending-thumbnails"));
+        Files.writeString(temp.resolve("pending-videos/legacy.html"),
+                "<html><script>alert('preview')</script></html>");
+        Files.writeString(temp.resolve("pending-thumbnails/legacy.svg"),
+                "<svg xmlns=\"http://www.w3.org/2000/svg\"><script>alert(1)</script></svg>");
+        when(videos.findById(10L)).thenReturn(Optional.of(leased));
+
+        assertThrows(ModerationService.PreviewNotFoundException.class,
+                () -> service.preview(10L, "reviewer", false));
+        assertThrows(ModerationService.PreviewNotFoundException.class,
+                () -> service.preview(10L, "reviewer", true));
+    }
+
+    @Test
+    void previewDescriptorUsesDetectedFormatInsteadOfLegacyExtension() throws Exception {
+        Video leased = activeLease();
+        leased.setFilePath("legacy.html");
+        leased.setThumbnailPath("legacy.svg");
+        Files.createDirectories(temp.resolve("pending-videos"));
+        Files.createDirectories(temp.resolve("pending-thumbnails"));
+        Files.write(temp.resolve("pending-videos/legacy.html"), MediaFixtures.mp4());
+        Files.write(temp.resolve("pending-thumbnails/legacy.svg"), MediaFixtures.png());
+        when(videos.findById(10L)).thenReturn(Optional.of(leased));
+
+        ModerationPreview video = service.preview(10L, "reviewer", false);
+        ModerationPreview thumbnail = service.preview(10L, "reviewer", true);
+
+        assertEquals("video/mp4", video.mediaType().toString());
+        assertEquals("preview.mp4", video.safeFilename());
+        assertEquals("image/png", thumbnail.mediaType().toString());
+        assertEquals("preview.png", thumbnail.safeFilename());
+        assertEquals("legacy.html", video.resource().getFilename());
+        assertEquals("legacy.svg", thumbnail.resource().getFilename());
+    }
+
+    @Test
     void expiredLeaseCanBeReassignedAndOldOwnerCannotDecide() {
         Video leased = pending(10L);
         leased.setLeaseOwner(other);

@@ -152,3 +152,70 @@ unchanged. Structural validation intentionally verifies the supported container
 and image invariants without attempting full video playback or codec
 transcoding. The existing Java-agent, Hibernate dialect, Vite CJS, and npm
 deprecation warnings remain non-failing.
+
+## Second final re-review closure
+
+A second read-only security review found preview-response and parser gaps after
+the previous follow-up commit. The evidence and verification above remain
+historical; this section records the final corrective pass.
+
+### RED/GREEN evidence
+
+- Preview safety: the focused RED failed compilation because no typed preview
+  descriptor existed. GREEN passed 22/22 combined moderation service/controller
+  tests after invalid legacy `.html` video and `.svg` thumbnail content became
+  unpreviewable, while valid MP4/PNG bytes stored under those wrong extensions
+  produced canonical media types and passive `preview.mp4`/`preview.png`
+  filenames. Controller coverage uses a resource named
+  `attacker-controlled.html` and verifies detected `video/mp4`, safe inline
+  disposition, and `X-Content-Type-Options: nosniff`.
+- Ogg exact-EOF parsing: the 14-test storage RED had one expected failure
+  because a complete first page followed by a truncated second page was
+  accepted. GREEN iterates every page and passed positive multi-page plus
+  truncated header, segment-table, and body-size cases.
+- Full WebP validation: the 18-test storage RED had two expected failures
+  because a header-only VP8L chunk and oversized VP8/VP8L dimensions were
+  accepted; the VP8X path also lacked bounded dimension validation. GREEN passed
+  18/18 after full RIFF/chunk iteration, exact padded-length checks, explicit
+  VP8/VP8L/VP8X pixel bounds, and complete ImageIO decoding with the maintained
+  TwelveMonkeys `imageio-webp` 3.13.1 plugin. The positive fixture is a real
+  decodable VP8 WebP rather than a synthetic header.
+- Integrated focused verification passed 40/40 across preview, moderation, and
+  storage tests.
+
+### Final behavior
+
+- `ModerationService.preview` runs the same on-disk structural and
+  active-content validator used by upload and approval. It returns a
+  `ModerationPreview` containing the resource, canonical detected `MediaType`,
+  and a fixed passive filename. `ModerationController` consumes only that
+  descriptor and never probes or reflects a stored attacker extension.
+- Ogg validation consumes complete page headers, lacing tables, and bodies until
+  the file position equals EOF. Any truncated subsequent page or inconsistent
+  lacing/body length fails closed.
+- WebP validation walks all RIFF chunks to exact EOF, verifies the RIFF declared
+  size and every padded chunk size, bounds VP8, VP8L, and VP8X dimensions before
+  allocation, requires an image bitstream, and then fully decodes the image via
+  ImageIO. JPEG and PNG retain their existing bounded ImageIO validation.
+- Deployment documentation now states that successful public-to-private
+  startup repairs remain private across later move, save, or commit failures so
+  the next startup can audit and retry from the safer fail-closed state.
+
+### Final whole-branch verification
+
+- Backend `mvn.cmd test`: 92 tests passed, 0 failures, 0 errors, 0 skipped.
+- User frontend `npm.cmd test -- --run`: 22 files and 72 tests passed.
+- User frontend `npm.cmd run build`: passed; 121 modules transformed.
+- Staff `npm.cmd ci --ignore-scripts`: passed; 209 packages installed.
+- Staff `npm.cmd test`: 11 files and 46 tests passed.
+- Staff `npm.cmd run build`: passed; 87 modules transformed.
+- `git diff --check`: passed before staging; repeated after staging and before
+  the final corrective commit.
+
+### Final concerns
+
+The TwelveMonkeys WebP reader adds a BSD-licensed runtime dependency and is
+pinned to 3.13.1. Video validation remains structural rather than a full codec
+transcode/playback check. The previously recorded live-MySQL and external TLS
+terminator limitations remain, as do the non-failing Java-agent, Hibernate
+dialect, Vite CJS, and npm deprecation warnings.

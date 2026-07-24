@@ -10,6 +10,7 @@ import java.io.InputStream;
 import java.io.SequenceInputStream;
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
+import java.util.Base64;
 
 final class MediaFixtures {
     private MediaFixtures() {
@@ -94,6 +95,11 @@ final class MediaFixtures {
     }
 
     static byte[] webp() {
+        return Base64.getDecoder().decode(
+                "UklGRiIAAABXRUJQVlA4IBYAAAAwAQCdASoBAAEADsD+JaQAA3AAAAAA");
+    }
+
+    static byte[] webpHeaderOnly() {
         ByteBuffer buffer = ByteBuffer.allocate(26).order(ByteOrder.LITTLE_ENDIAN);
         buffer.put(new byte[]{'R', 'I', 'F', 'F'});
         buffer.putInt(18);
@@ -103,6 +109,25 @@ final class MediaFixtures {
         buffer.put(bytes(0x2F, 0, 0, 0, 0));
         buffer.put((byte) 0);
         return buffer.array();
+    }
+
+    static byte[] oversizedVp8Webp() {
+        return webpChunk("VP8 ", bytes(
+                0, 0, 0,
+                0x9D, 0x01, 0x2A,
+                0xFF, 0x3F,
+                0xFF, 0x3F));
+    }
+
+    static byte[] oversizedVp8lWebp() {
+        return webpChunk("VP8L", bytes(0x2F, 0xFF, 0xFF, 0xFF, 0x0F));
+    }
+
+    static byte[] oversizedVp8xWebp() {
+        return webpChunk("VP8X", bytes(
+                0, 0, 0, 0,
+                0x70, 0x17, 0,
+                0x70, 0x17, 0));
     }
 
     static byte[] bytes(int... values) {
@@ -145,5 +170,20 @@ final class MediaFixtures {
         output.writeBytes(ByteBuffer.allocate(8).putInt(payload.length + 8)
                 .put(type.getBytes(java.nio.charset.StandardCharsets.US_ASCII)).array());
         output.writeBytes(payload);
+    }
+
+    private static byte[] webpChunk(String type, byte[] payload) {
+        int paddedLength = payload.length + (payload.length & 1);
+        ByteBuffer buffer = ByteBuffer.allocate(20 + paddedLength).order(ByteOrder.LITTLE_ENDIAN);
+        buffer.put(new byte[]{'R', 'I', 'F', 'F'});
+        buffer.putInt(12 + paddedLength);
+        buffer.put(new byte[]{'W', 'E', 'B', 'P'});
+        buffer.put(type.getBytes(java.nio.charset.StandardCharsets.US_ASCII));
+        buffer.putInt(payload.length);
+        buffer.put(payload);
+        if ((payload.length & 1) != 0) {
+            buffer.put((byte) 0);
+        }
+        return buffer.array();
     }
 }

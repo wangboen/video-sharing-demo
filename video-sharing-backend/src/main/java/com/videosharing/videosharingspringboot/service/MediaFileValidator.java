@@ -128,6 +128,7 @@ final class MediaFileValidator {
         }
         if (matches(prefix, 0, ascii("RIFF")) && matches(prefix, 8, ascii("WEBP"))) {
             validateWebp(file, size);
+            validateImage(file, "WEBP");
             return MediaFormat.WEBP;
         }
         throw invalid("Unsupported thumbnail file structure.");
@@ -201,21 +202,32 @@ final class MediaFileValidator {
             throw invalid("Ogg page header is truncated.");
         }
         try (FileChannel channel = FileChannel.open(file, StandardOpenOption.READ)) {
-            ByteBuffer header = read(channel, 0, 27);
-            byte[] capture = new byte[4];
-            header.get(capture);
-            if (!matches(capture, 0, ascii("OggS")) || header.get() != 0) {
-                throw invalid("Ogg capture pattern or stream version is invalid.");
-            }
-            header.position(26);
-            int segments = Byte.toUnsignedInt(header.get());
-            ByteBuffer lacing = read(channel, 27, segments);
-            long bodyLength = 0;
-            while (lacing.hasRemaining()) {
-                bodyLength += Byte.toUnsignedInt(lacing.get());
-            }
-            if (27L + segments + bodyLength > fileSize) {
-                throw invalid("Ogg page segment table points beyond the file.");
+            long position = 0;
+            while (position < fileSize) {
+                if (fileSize - position < 27) {
+                    throw invalid("Ogg page header is truncated.");
+                }
+                ByteBuffer header = read(channel, position, 27);
+                byte[] capture = new byte[4];
+                header.get(capture);
+                if (!matches(capture, 0, ascii("OggS")) || header.get() != 0) {
+                    throw invalid("Ogg capture pattern or stream version is invalid.");
+                }
+                header.position(26);
+                int segments = Byte.toUnsignedInt(header.get());
+                if (fileSize - position - 27 < segments) {
+                    throw invalid("Ogg page segment table is truncated.");
+                }
+                ByteBuffer lacing = read(channel, position + 27, segments);
+                long bodyLength = 0;
+                while (lacing.hasRemaining()) {
+                    bodyLength += Byte.toUnsignedInt(lacing.get());
+                }
+                long pageLength = 27L + segments + bodyLength;
+                if (pageLength > fileSize - position) {
+                    throw invalid("Ogg page segment table points beyond the file.");
+                }
+                position += pageLength;
             }
         }
     }
@@ -258,11 +270,11 @@ final class MediaFileValidator {
     }
 
     private static void validateWebp(Path file, long fileSize) throws IOException {
-        if (fileSize < 26 || fileSize > Integer.toUnsignedLong(-1) + 8L) {
+        if (fileSize < 20 || fileSize > Integer.toUnsignedLong(-1) + 8L) {
             throw invalid("WebP RIFF container is truncated or too large.");
         }
         try (FileChannel channel = FileChannel.open(file, StandardOpenOption.READ)) {
-            ByteBuffer header = read(channel, 0, 20).order(ByteOrder.LITTLE_ENDIAN);
+            ByteBuffer header = read(channel, 0, 12).order(ByteOrder.LITTLE_ENDIAN);
             if (!"RIFF".equals(fourCc(header))) {
                 throw invalid("WebP RIFF header is missing.");
             }
@@ -270,37 +282,89 @@ final class MediaFileValidator {
             if (!"WEBP".equals(fourCc(header)) || declaredRiffSize + 8 != fileSize) {
                 throw invalid("WebP RIFF declared size does not match the file.");
             }
-            String chunkType = fourCc(header);
-            long chunkSize = Integer.toUnsignedLong(header.getInt());
-            long paddedChunkSize = chunkSize + (chunkSize & 1);
-            if (20 + paddedChunkSize != fileSize) {
-                throw invalid("WebP image chunk length is truncated or invalid.");
+
+            boolean foundImageBitstream = false;
+            long position = 12;
+            while (position < fileSize) {
+                if (fileSize - position < 8) {
+                    throw invalid("WebP chunk header is truncated.");
+                }
+                ByteBuffer chunkHeader = read(channel, position, 8).order(ByteOrder.LITTLE_ENDIAN);
+                String chunkType = fourCc(chunkHeader);
+                long chunkSize = Integer.toUnsignedLong(chunkHeader.getInt());
+                long paddedChunkSize = chunkSize + (chunkSize & 1);
+                long payloadPosition = position + 8;
+                if (paddedChunkSize > fileSize - payloadPosition) {
+                    throw invalid("WebP chunk length is truncated or invalid.");
+                }
+
+                if ("VP8 ".equals(chunkType)) {
+                    validateVp8Dimensions(channel, payloadPosition, chunkSize);
+                    foundImageBitstream = true;
+                } else if ("VP8L".equals(chunkType)) {
+                    validateVp8lDimensions(channel, payloadPosition, chunkSize);
+                    foundImageBitstream = true;
+                } else if ("VP8X".equals(chunkType)) {
+                    if (position != 12 || chunkSize != 10) {
+                        throw invalid("WebP VP8X chunk is misplaced or has an invalid size.");
+                    }
+                    validateVp8xDimensions(channel, payloadPosition);
+                }
+                position = payloadPosition + paddedChunkSize;
             }
-            if ("VP8L".equals(chunkType)) {
-                ByteBuffer payload = read(channel, 20, 5).order(ByteOrder.LITTLE_ENDIAN);
-                if (chunkSize < 5 || Byte.toUnsignedInt(payload.get()) != 0x2F) {
-                    throw invalid("WebP VP8L image header is invalid.");
-                }
-                payload.getInt();
-                return;
+            if (!foundImageBitstream) {
+                throw invalid("WebP image bitstream chunk is missing.");
             }
-            if ("VP8 ".equals(chunkType)) {
-                ByteBuffer payload = read(channel, 20, 10).order(ByteOrder.LITTLE_ENDIAN);
-                if (chunkSize < 10) {
-                    throw invalid("WebP VP8 image header is truncated.");
-                }
-                payload.position(3);
-                if (payload.get() != (byte) 0x9D || payload.get() != 0x01 || payload.get() != 0x2A) {
-                    throw invalid("WebP VP8 frame start code is invalid.");
-                }
-                int width = Short.toUnsignedInt(payload.getShort()) & 0x3FFF;
-                int height = Short.toUnsignedInt(payload.getShort()) & 0x3FFF;
-                if (width == 0 || height == 0) {
-                    throw invalid("WebP VP8 dimensions are invalid.");
-                }
-                return;
-            }
-            throw invalid("Unsupported WebP chunk type; VP8 and VP8L are allowed.");
+        }
+    }
+
+    private static void validateVp8Dimensions(FileChannel channel, long position, long chunkSize)
+            throws IOException {
+        if (chunkSize < 10) {
+            throw invalid("WebP VP8 image header is truncated.");
+        }
+        ByteBuffer payload = read(channel, position, 10).order(ByteOrder.LITTLE_ENDIAN);
+        payload.position(3);
+        if (payload.get() != (byte) 0x9D || payload.get() != 0x01 || payload.get() != 0x2A) {
+            throw invalid("WebP VP8 frame start code is invalid.");
+        }
+        int width = Short.toUnsignedInt(payload.getShort()) & 0x3FFF;
+        int height = Short.toUnsignedInt(payload.getShort()) & 0x3FFF;
+        validateWebpDimensions(width, height);
+    }
+
+    private static void validateVp8lDimensions(FileChannel channel, long position, long chunkSize)
+            throws IOException {
+        if (chunkSize < 5) {
+            throw invalid("WebP VP8L image header is truncated.");
+        }
+        ByteBuffer payload = read(channel, position, 5).order(ByteOrder.LITTLE_ENDIAN);
+        if (Byte.toUnsignedInt(payload.get()) != 0x2F) {
+            throw invalid("WebP VP8L image signature is invalid.");
+        }
+        int dimensionBits = payload.getInt();
+        int width = (dimensionBits & 0x3FFF) + 1;
+        int height = ((dimensionBits >>> 14) & 0x3FFF) + 1;
+        validateWebpDimensions(width, height);
+    }
+
+    private static void validateVp8xDimensions(FileChannel channel, long position) throws IOException {
+        ByteBuffer payload = read(channel, position, 10);
+        payload.position(4);
+        int width = littleEndian24(payload) + 1;
+        int height = littleEndian24(payload) + 1;
+        validateWebpDimensions(width, height);
+    }
+
+    private static int littleEndian24(ByteBuffer buffer) {
+        return Byte.toUnsignedInt(buffer.get())
+                | (Byte.toUnsignedInt(buffer.get()) << 8)
+                | (Byte.toUnsignedInt(buffer.get()) << 16);
+    }
+
+    private static void validateWebpDimensions(int width, int height) {
+        if (width <= 0 || height <= 0 || (long) width * height > MAX_IMAGE_PIXELS) {
+            throw invalid("WebP dimensions are invalid or too large.");
         }
     }
 
@@ -425,25 +489,31 @@ final class MediaFileValidator {
     }
 
     enum MediaFormat {
-        MP4(".mp4", Set.of("video/mp4"), Set.of(".mp4")),
-        WEBM(".webm", Set.of("video/webm"), Set.of(".webm")),
-        OGV(".ogv", Set.of("video/ogg"), Set.of(".ogv", ".ogg")),
-        JPEG(".jpg", Set.of("image/jpeg"), Set.of(".jpg", ".jpeg")),
-        PNG(".png", Set.of("image/png"), Set.of(".png")),
-        WEBP(".webp", Set.of("image/webp"), Set.of(".webp"));
+        MP4(".mp4", "video/mp4", Set.of(".mp4")),
+        WEBM(".webm", "video/webm", Set.of(".webm")),
+        OGV(".ogv", "video/ogg", Set.of(".ogv", ".ogg")),
+        JPEG(".jpg", "image/jpeg", Set.of(".jpg", ".jpeg")),
+        PNG(".png", "image/png", Set.of(".png")),
+        WEBP(".webp", "image/webp", Set.of(".webp"));
 
         private final String serverExtension;
+        private final String mediaType;
         private final Set<String> mimeTypes;
         private final Set<String> sourceExtensions;
 
-        MediaFormat(String serverExtension, Set<String> mimeTypes, Set<String> sourceExtensions) {
+        MediaFormat(String serverExtension, String mediaType, Set<String> sourceExtensions) {
             this.serverExtension = serverExtension;
-            this.mimeTypes = mimeTypes;
+            this.mediaType = mediaType;
+            this.mimeTypes = Set.of(mediaType);
             this.sourceExtensions = sourceExtensions;
         }
 
         String serverExtension() {
             return serverExtension;
+        }
+
+        String mediaType() {
+            return mediaType;
         }
 
         Set<String> mimeTypes() {

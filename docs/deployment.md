@@ -64,5 +64,7 @@ column is made non-null. Legacy users without roles are migrated to `USER`.
 Every `PENDING` video is audited: public-only legacy media is moved to private
 pending storage, while duplicate or missing video/thumbnail state fails
 startup. Videos with a null status are included in the same migration and
-marked `PENDING`. Completed moves are reversed if the migration transaction
-does not commit.
+marked `PENDING`. A completed public-to-private repair intentionally remains in
+private storage if a later move, database save, or transaction commit fails.
+The next startup audits that safer state and retries idempotently; repaired
+media is never rolled back into the public aliases.

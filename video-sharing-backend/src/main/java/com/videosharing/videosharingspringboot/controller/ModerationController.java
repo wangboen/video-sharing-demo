@@ -4,12 +4,13 @@ import com.videosharing.videosharingspringboot.dto.ModerationDecisionRequest;
 import com.videosharing.videosharingspringboot.dto.ModerationDecisionResponse;
 import com.videosharing.videosharingspringboot.dto.ModerationVideoResponse;
 import com.videosharing.videosharingspringboot.model.Role;
+import com.videosharing.videosharingspringboot.service.ModerationPreview;
 import com.videosharing.videosharingspringboot.service.ModerationService;
 import com.videosharing.videosharingspringboot.service.UserService;
 import jakarta.validation.Valid;
 import org.springframework.core.io.Resource;
+import org.springframework.http.ContentDisposition;
 import org.springframework.http.HttpHeaders;
-import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.DeleteMapping;
@@ -21,8 +22,6 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
-
-import java.io.IOException;
 
 @RestController
 @RequestMapping("/api/moderation/videos")
@@ -59,14 +58,12 @@ public class ModerationController {
     }
 
     @GetMapping("/{id}/preview/video")
-    public ResponseEntity<Resource> previewVideo(@PathVariable Long id, Authentication authentication)
-            throws IOException {
+    public ResponseEntity<Resource> previewVideo(@PathVariable Long id, Authentication authentication) {
         return preview(moderation.preview(id, authentication.getName(), false));
     }
 
     @GetMapping("/{id}/preview/thumbnail")
-    public ResponseEntity<Resource> previewThumbnail(@PathVariable Long id, Authentication authentication)
-            throws IOException {
+    public ResponseEntity<Resource> previewThumbnail(@PathVariable Long id, Authentication authentication) {
         return preview(moderation.preview(id, authentication.getName(), true));
     }
 
@@ -77,16 +74,12 @@ public class ModerationController {
         return moderation.decide(id, authentication.getName(), request);
     }
 
-    private ResponseEntity<Resource> preview(Resource resource) throws IOException {
-        String type = MediaType.APPLICATION_OCTET_STREAM_VALUE;
-        String detected = java.nio.file.Files.probeContentType(resource.getFile().toPath());
-        if (detected != null) {
-            type = detected;
-        }
+    private ResponseEntity<Resource> preview(ModerationPreview preview) {
         return ResponseEntity.ok()
-                .contentType(MediaType.parseMediaType(type))
+                .contentType(preview.mediaType())
                 .header(HttpHeaders.CONTENT_DISPOSITION,
-                        "inline; filename=\"" + resource.getFilename().replace("\"", "") + "\"")
-                .body(resource);
+                        ContentDisposition.inline().filename(preview.safeFilename()).build().toString())
+                .header("X-Content-Type-Options", "nosniff")
+                .body(preview.resource());
     }
 }
