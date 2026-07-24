@@ -45,3 +45,20 @@ Implementation commit: `4e89737` (`feat: add ordinary user moderation flow`).
 ## Concerns
 
 None. The Vite test/build output continues to emit the pre-existing CJS Node API deprecation warning; it does not fail either verification command.
+
+## Review follow-up
+
+Review findings were fixed with a second RED/GREEN cycle. Focused tests first failed for the backend `uploadDate` field, relative safe DTO media URLs resolving against the dev backend origin, and stale upload guidance; they then passed (5 files, 14 tests).
+
+- Dashboard submission fixtures and rendering now use `uploadDate`.
+- Relative `videoUrl` and `thumbnailUrl` values resolve against the configured API base origin, while absolute URLs and an empty same-origin production base remain unchanged.
+- Upload guidance now directs users to submit for review and check their submissions.
+
+Follow-up verification:
+
+```text
+npm.cmd test      21 test files passed, 68 tests passed
+npm.cmd run build vite production build completed successfully
+```
+
+Review-fix implementation commit: `7748640` (`fix: align user moderation DTO handling`).
