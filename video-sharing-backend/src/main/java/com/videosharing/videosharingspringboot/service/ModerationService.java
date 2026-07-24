@@ -16,9 +16,11 @@ import org.springframework.core.io.Resource;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.TransactionDefinition;
 import org.springframework.transaction.annotation.Transactional;
-import org.springframework.transaction.support.TransactionSynchronization;
-import org.springframework.transaction.support.TransactionSynchronizationManager;
+import org.springframework.transaction.support.TransactionOperations;
+import org.springframework.transaction.support.TransactionTemplate;
 
 import java.io.IOException;
 import java.nio.file.Files;
@@ -31,6 +33,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
+import java.util.UUID;
 
 @Service
 public class ModerationService {
@@ -44,6 +47,7 @@ public class ModerationService {
     private final Path publicThumbnails;
     private final Duration leaseDuration;
     private final Clock clock;
+    private final TransactionOperations decisionTransactions;
 
     @Autowired
     public ModerationService(VideoRepository videos,
@@ -52,10 +56,12 @@ public class ModerationService {
                              @Value("${file.pending-thumbnail-dir}") String pendingThumbnails,
                              @Value("${file.upload-dir}") String publicVideos,
                              @Value("${file.thumbnail-dir}") String publicThumbnails,
-                             @Value("${moderation.lease-duration-minutes:15}") long leaseMinutes) {
+                             @Value("${moderation.lease-duration-minutes:15}") long leaseMinutes,
+                             PlatformTransactionManager transactionManager) {
         this(videos, users, Paths.get(pendingVideos), Paths.get(pendingThumbnails),
                 Paths.get(publicVideos), Paths.get(publicThumbnails),
-                Duration.ofMinutes(leaseMinutes), Clock.systemUTC());
+                Duration.ofMinutes(leaseMinutes), Clock.systemUTC(),
+                decisionTransactionTemplate(transactionManager));
     }
 
     ModerationService(VideoRepository videos,
@@ -66,6 +72,19 @@ public class ModerationService {
                       Path publicThumbnails,
                       Duration leaseDuration,
                       Clock clock) {
+        this(videos, users, pendingVideos, pendingThumbnails, publicVideos, publicThumbnails,
+                leaseDuration, clock, TransactionOperations.withoutTransaction());
+    }
+
+    ModerationService(VideoRepository videos,
+                      UserRepository users,
+                      Path pendingVideos,
+                      Path pendingThumbnails,
+                      Path publicVideos,
+                      Path publicThumbnails,
+                      Duration leaseDuration,
+                      Clock clock,
+                      TransactionOperations decisionTransactions) {
         if (leaseDuration == null || leaseDuration.compareTo(STAFF_HEARTBEAT_INTERVAL) <= 0) {
             throw new IllegalArgumentException(
                     "Moderation lease duration must be greater than the 60-second staff heartbeat interval");
@@ -78,6 +97,7 @@ public class ModerationService {
         this.publicThumbnails = normalize(publicThumbnails);
         this.leaseDuration = leaseDuration;
         this.clock = clock;
+        this.decisionTransactions = Objects.requireNonNull(decisionTransactions);
     }
 
     @Transactional
@@ -148,8 +168,48 @@ public class ModerationService {
         return new PathResource(path);
     }
 
-    @Transactional
     public ModerationDecisionResponse decide(Long id, String username, ModerationDecisionRequest request) {
+        List<Move> completed = new ArrayList<>();
+        ApprovalAttempt attempt = new ApprovalAttempt();
+        try {
+            ModerationDecisionResponse response = decisionTransactions.execute(
+                    transaction -> decideInTransaction(id, username, request, completed, attempt));
+            if (response == null) {
+                throw new IllegalStateException("Moderation decision transaction returned no result");
+            }
+            return response;
+        } catch (RuntimeException exception) {
+            if (!attempt.started()) {
+                throw exception;
+            }
+            Throwable original = exception instanceof MediaPublicationFailure
+                    && exception.getCause() != null ? exception.getCause() : exception;
+            IOException compensationFailure = null;
+            try {
+                restore(completed);
+            } catch (IOException restoreFailure) {
+                compensationFailure = restoreFailure;
+            }
+            attempt.reset();
+            String detail = original.getMessage() == null
+                    ? original.getClass().getSimpleName()
+                    : original.getMessage();
+            String message = compensationFailure == null
+                    ? "Could not publish approved media: " + detail
+                    : "Could not publish approved media and compensation failed: " + detail;
+            ModerationConflictException failure = new ModerationConflictException(message, original);
+            if (compensationFailure != null) {
+                failure.addSuppressed(compensationFailure);
+            }
+            throw failure;
+        }
+    }
+
+    private ModerationDecisionResponse decideInTransaction(Long id,
+                                                           String username,
+                                                           ModerationDecisionRequest request,
+                                                           List<Move> completed,
+                                                           ApprovalAttempt attempt) {
         Video video = locked(id);
         if (video.getStatus() != VideoStatus.PENDING) {
             throw new ModerationConflictException("Video has already been decided");
@@ -167,7 +227,8 @@ public class ModerationService {
         if (!"APPROVE".equals(decision)) {
             throw new IllegalArgumentException("Decision must be APPROVE or REJECT");
         }
-        approve(video);
+        attempt.capture(video);
+        approve(video, completed);
         return ModerationDecisionResponse.from(video);
     }
 
@@ -186,72 +247,47 @@ public class ModerationService {
         clearLease(video);
     }
 
-    private void approve(Video video) {
-        List<Move> completed = new ArrayList<>();
+    private void approve(Video video, List<Move> completed) {
         try {
-            move(pendingVideos, publicVideos, video.getFilePath(), completed);
+            Path pendingVideo = safeResolve(pendingVideos, video.getFilePath());
+            MediaFileValidator.MediaFormat videoFormat = MediaFileValidator.inspect(
+                    pendingVideo, MediaFileValidator.MediaKind.VIDEO);
+            Path pendingThumbnail = null;
+            MediaFileValidator.MediaFormat thumbnailFormat = null;
             if (video.getThumbnailPath() != null) {
-                move(pendingThumbnails, publicThumbnails, video.getThumbnailPath(), completed);
+                pendingThumbnail = safeResolve(pendingThumbnails, video.getThumbnailPath());
+                thumbnailFormat = MediaFileValidator.inspect(
+                        pendingThumbnail, MediaFileValidator.MediaKind.THUMBNAIL);
             }
+
+            String publishedVideoName = UUID.randomUUID() + videoFormat.serverExtension();
+            String publishedThumbnailName = thumbnailFormat == null
+                    ? null
+                    : UUID.randomUUID() + thumbnailFormat.serverExtension();
+            move(pendingVideo, safeResolve(publicVideos, publishedVideoName), completed);
+            if (pendingThumbnail != null) {
+                move(pendingThumbnail, safeResolve(publicThumbnails, publishedThumbnailName), completed);
+            }
+            video.setFilePath(publishedVideoName);
+            video.setThumbnailPath(publishedThumbnailName);
             video.setStatus(VideoStatus.APPROVED);
             video.setReviewer(video.getLeaseOwner());
             video.setReviewedAt(now());
             video.setRejectionReason(null);
             clearLease(video);
             videos.saveAndFlush(video);
-            restoreOnTransactionRollback(completed);
-        } catch (IOException | RuntimeException exception) {
-            IOException compensationFailure = null;
-            try {
-                restore(completed);
-            } catch (IOException restoreFailure) {
-                compensationFailure = restoreFailure;
-            }
-            video.setStatus(VideoStatus.PENDING);
-            video.setReviewer(null);
-            video.setReviewedAt(null);
-            video.setRejectionReason(null);
-            String message = compensationFailure == null
-                    ? "Could not publish approved media: " + exception.getMessage()
-                    : "Could not publish approved media and compensation failed: " + exception.getMessage();
-            ModerationConflictException failure = new ModerationConflictException(message, exception);
-            if (compensationFailure != null) {
-                failure.addSuppressed(compensationFailure);
-            }
-            throw failure;
+        } catch (IOException exception) {
+            throw new MediaPublicationFailure(exception);
         }
     }
 
-    private void move(Path sourceDirectory, Path targetDirectory, String fileName, List<Move> completed)
-            throws IOException {
-        Path source = safeResolve(sourceDirectory, fileName);
-        Path target = safeResolve(targetDirectory, fileName);
+    private void move(Path source, Path target, List<Move> completed) throws IOException {
         if (!Files.isRegularFile(source) || Files.exists(target)) {
-            throw new IOException("Unsafe media source/destination state for " + fileName);
+            throw new IOException("Unsafe media source/destination state for " + source.getFileName());
         }
-        Files.createDirectories(targetDirectory);
-        Files.move(source, target);
+        Files.createDirectories(target.getParent());
+        MediaFileValidator.moveAtomically(source, target);
         completed.add(new Move(source, target));
-    }
-
-    private void restoreOnTransactionRollback(List<Move> completed) {
-        if (!TransactionSynchronizationManager.isSynchronizationActive()) {
-            return;
-        }
-        List<Move> snapshot = List.copyOf(completed);
-        TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
-            @Override
-            public void afterCompletion(int status) {
-                if (status != STATUS_COMMITTED) {
-                    try {
-                        restore(snapshot);
-                    } catch (IOException exception) {
-                        throw new IllegalStateException(
-                                "Approved media compensation failed after transaction rollback", exception);
-                    }
-                }
-            }
-        });
     }
 
     private void restore(List<Move> completed) throws IOException {
@@ -318,7 +354,65 @@ public class ModerationService {
         return resolved;
     }
 
+    private static TransactionTemplate decisionTransactionTemplate(
+            PlatformTransactionManager transactionManager) {
+        TransactionTemplate template = new TransactionTemplate(transactionManager);
+        template.setPropagationBehavior(TransactionDefinition.PROPAGATION_REQUIRES_NEW);
+        return template;
+    }
+
     private record Move(Path source, Path target) {
+    }
+
+    private static final class ApprovalAttempt {
+        private Video video;
+        private VideoStatus status;
+        private Long version;
+        private String filePath;
+        private String thumbnailPath;
+        private User reviewer;
+        private Instant reviewedAt;
+        private String rejectionReason;
+        private User leaseOwner;
+        private Instant claimedAt;
+        private Instant leaseExpiresAt;
+
+        void capture(Video video) {
+            this.video = video;
+            status = video.getStatus();
+            version = video.getVersion();
+            filePath = video.getFilePath();
+            thumbnailPath = video.getThumbnailPath();
+            reviewer = video.getReviewer();
+            reviewedAt = video.getReviewedAt();
+            rejectionReason = video.getRejectionReason();
+            leaseOwner = video.getLeaseOwner();
+            claimedAt = video.getClaimedAt();
+            leaseExpiresAt = video.getLeaseExpiresAt();
+        }
+
+        boolean started() {
+            return video != null;
+        }
+
+        void reset() {
+            video.setStatus(status);
+            video.setVersion(version);
+            video.setFilePath(filePath);
+            video.setThumbnailPath(thumbnailPath);
+            video.setReviewer(reviewer);
+            video.setReviewedAt(reviewedAt);
+            video.setRejectionReason(rejectionReason);
+            video.setLeaseOwner(leaseOwner);
+            video.setClaimedAt(claimedAt);
+            video.setLeaseExpiresAt(leaseExpiresAt);
+        }
+    }
+
+    private static final class MediaPublicationFailure extends RuntimeException {
+        private MediaPublicationFailure(IOException cause) {
+            super(cause);
+        }
     }
 
     public static class PreviewNotFoundException extends RuntimeException {

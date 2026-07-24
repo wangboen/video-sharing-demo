@@ -227,17 +227,66 @@ class ModerationServiceTest {
         leased.setThumbnailPath("thumb.png");
         Files.createDirectories(temp.resolve("pending-videos"));
         Files.createDirectories(temp.resolve("pending-thumbnails"));
-        Files.writeString(temp.resolve("pending-videos/video.mp4"), "video");
-        Files.writeString(temp.resolve("pending-thumbnails/thumb.png"), "thumb");
+        Files.write(temp.resolve("pending-videos/video.mp4"), MediaFixtures.mp4());
+        Files.write(temp.resolve("pending-thumbnails/thumb.png"), MediaFixtures.png());
         when(videos.findByIdForUpdate(10L)).thenReturn(Optional.of(leased));
 
         service.decide(10L, "reviewer", decision("APPROVE", "ignored", 4L));
 
         assertEquals(VideoStatus.APPROVED, leased.getStatus());
         assertNull(leased.getRejectionReason());
-        assertTrue(Files.exists(temp.resolve("public-videos/video.mp4")));
-        assertTrue(Files.exists(temp.resolve("public-thumbnails/thumb.png")));
+        assertNotEquals("video.mp4", leased.getFilePath());
+        assertNotEquals("thumb.png", leased.getThumbnailPath());
+        assertTrue(leased.getFilePath().endsWith(".mp4"));
+        assertTrue(leased.getThumbnailPath().endsWith(".png"));
+        assertTrue(Files.exists(temp.resolve("public-videos").resolve(leased.getFilePath())));
+        assertTrue(Files.exists(temp.resolve("public-thumbnails").resolve(leased.getThumbnailPath())));
+        assertFalse(Files.exists(temp.resolve("pending-videos/video.mp4")));
+        assertFalse(Files.exists(temp.resolve("pending-thumbnails/thumb.png")));
         assertNull(leased.getLeaseOwner());
+    }
+
+    @Test
+    void approvalRejectsMaliciousLegacyPrivateMediaWithoutPublishingIt() throws Exception {
+        Video leased = activeLease();
+        leased.setVersion(4L);
+        leased.setFilePath("legacy-video.mp4");
+        Files.createDirectories(temp.resolve("pending-videos"));
+        Files.writeString(temp.resolve("pending-videos/legacy-video.mp4"),
+                "<html><script>alert('stored xss')</script></html>");
+        when(videos.findByIdForUpdate(10L)).thenReturn(Optional.of(leased));
+
+        ModerationConflictException failure = assertThrows(ModerationConflictException.class,
+                () -> service.decide(10L, "reviewer", decision("APPROVE", null, 4L)));
+
+        assertTrue(failure.getMessage().contains("Could not publish approved media"));
+        assertEquals(VideoStatus.PENDING, leased.getStatus());
+        assertEquals("legacy-video.mp4", leased.getFilePath());
+        assertTrue(Files.exists(temp.resolve("pending-videos/legacy-video.mp4")));
+        assertFalse(Files.exists(temp.resolve("public-videos")));
+        verify(videos, never()).saveAndFlush(any());
+    }
+
+    @Test
+    void approvalDetectsSafeLegacyFormatsAndPublishesUnderServerNames() throws Exception {
+        Video leased = activeLease();
+        leased.setVersion(4L);
+        leased.setFilePath("untrusted-video.bin");
+        leased.setThumbnailPath("untrusted-thumbnail.data");
+        Files.createDirectories(temp.resolve("pending-videos"));
+        Files.createDirectories(temp.resolve("pending-thumbnails"));
+        Files.write(temp.resolve("pending-videos/untrusted-video.bin"), MediaFixtures.mp4());
+        Files.write(temp.resolve("pending-thumbnails/untrusted-thumbnail.data"), MediaFixtures.png());
+        when(videos.findByIdForUpdate(10L)).thenReturn(Optional.of(leased));
+
+        service.decide(10L, "reviewer", decision("APPROVE", null, 4L));
+
+        assertTrue(leased.getFilePath().matches("[0-9a-f-]{36}\\.mp4"));
+        assertTrue(leased.getThumbnailPath().matches("[0-9a-f-]{36}\\.png"));
+        assertTrue(Files.isRegularFile(temp.resolve("public-videos").resolve(leased.getFilePath())));
+        assertTrue(Files.isRegularFile(temp.resolve("public-thumbnails").resolve(leased.getThumbnailPath())));
+        assertFalse(Files.exists(temp.resolve("pending-videos/untrusted-video.bin")));
+        assertFalse(Files.exists(temp.resolve("pending-thumbnails/untrusted-thumbnail.data")));
     }
 
     @Test
@@ -246,7 +295,7 @@ class ModerationServiceTest {
         leased.setVersion(4L);
         leased.setFilePath("video.mp4");
         Files.createDirectories(temp.resolve("pending-videos"));
-        Files.writeString(temp.resolve("pending-videos/video.mp4"), "video");
+        Files.write(temp.resolve("pending-videos/video.mp4"), MediaFixtures.mp4());
         when(videos.findByIdForUpdate(10L)).thenReturn(Optional.of(leased));
         RuntimeException databaseFailure = new RuntimeException("database commit failed");
         when(videos.saveAndFlush(leased)).thenAnswer(invocation -> {
@@ -261,7 +310,9 @@ class ModerationServiceTest {
         assertSame(databaseFailure, failure.getCause());
         assertEquals(1, failure.getSuppressed().length);
         assertTrue(failure.getSuppressed()[0].getMessage().contains("Unsafe compensation state"));
-        assertTrue(Files.exists(temp.resolve("public-videos/video.mp4")));
+        try (var published = Files.list(temp.resolve("public-videos"))) {
+            assertEquals(1, published.count());
+        }
         assertTrue(Files.exists(temp.resolve("pending-videos/video.mp4")));
     }
 

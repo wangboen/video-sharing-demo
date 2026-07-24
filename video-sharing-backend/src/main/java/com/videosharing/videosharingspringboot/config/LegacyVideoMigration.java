@@ -10,8 +10,6 @@ import org.springframework.core.Ordered;
 import org.springframework.core.annotation.Order;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
-import org.springframework.transaction.support.TransactionSynchronization;
-import org.springframework.transaction.support.TransactionSynchronizationManager;
 
 import java.io.IOException;
 import java.nio.file.Files;
@@ -70,22 +68,18 @@ public class LegacyVideoMigration implements CommandLineRunner {
             }
         }
 
-        List<Move> completed = new ArrayList<>();
         try {
             for (FileState state : states) {
                 if (state.needsMove()) {
                     Files.createDirectories(state.destination().getParent());
                     Files.move(state.source(), state.destination());
-                    completed.add(new Move(state.source(), state.destination()));
                 }
             }
             legacy.forEach(video -> video.setStatus(VideoStatus.PENDING));
             if (!legacy.isEmpty()) {
                 videos.saveAll(legacy);
             }
-            restoreOnRollback(completed, legacy);
         } catch (IOException | RuntimeException exception) {
-            restore(completed);
             legacy.forEach(video -> video.setStatus(null));
             throw new IllegalStateException("Legacy media migration failed", exception);
         }
@@ -103,36 +97,6 @@ public class LegacyVideoMigration implements CommandLineRunner {
         return new FileState(source, destination, sourceExists);
     }
 
-    private void restoreOnRollback(List<Move> completed, List<Video> legacy) {
-        if (!TransactionSynchronizationManager.isSynchronizationActive()) {
-            return;
-        }
-        List<Move> snapshot = List.copyOf(completed);
-        TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
-            @Override
-            public void afterCompletion(int status) {
-                if (status != STATUS_COMMITTED) {
-                    restore(snapshot);
-                    legacy.forEach(video -> video.setStatus(null));
-                }
-            }
-        });
-    }
-
-    private static void restore(List<Move> completed) {
-        for (int index = completed.size() - 1; index >= 0; index--) {
-            Move move = completed.get(index);
-            try {
-                Files.createDirectories(move.source().getParent());
-                if (Files.exists(move.destination()) && !Files.exists(move.source())) {
-                    Files.move(move.destination(), move.source());
-                }
-            } catch (IOException ignored) {
-                // Startup still fails; the inconsistency is reported again on the next boot.
-            }
-        }
-    }
-
     private static Path normalize(Path path) {
         return path.toAbsolutePath().normalize();
     }
@@ -146,8 +110,5 @@ public class LegacyVideoMigration implements CommandLineRunner {
     }
 
     private record FileState(Path source, Path destination, boolean needsMove) {
-    }
-
-    private record Move(Path source, Path destination) {
     }
 }

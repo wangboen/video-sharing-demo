@@ -8,7 +8,11 @@ import com.videosharing.videosharingspringboot.repository.VideoRepository;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import org.springframework.mock.web.MockMultipartFile;
+import org.springframework.web.multipart.MultipartFile;
 
+import java.io.File;
+import java.io.IOException;
+import java.io.InputStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.charset.StandardCharsets;
@@ -43,16 +47,15 @@ class VideoServiceStorageTest {
 
         assertStoredVideoExtension("movie.mp4", "video/mp4", mp4(), ".mp4");
         assertStoredVideoExtension("movie.webm", "video/webm",
-                bytes(0x1A, 0x45, 0xDF, 0xA3), ".webm");
+                MediaFixtures.webm(), ".webm");
         assertStoredVideoExtension("movie.ogv", "video/ogg",
-                "OggS".getBytes(StandardCharsets.US_ASCII), ".ogv");
+                MediaFixtures.ogg(), ".ogv");
 
         assertStoredThumbnailExtension("cover.jpg", "image/jpeg",
-                bytes(0xFF, 0xD8, 0xFF), ".jpg");
+                MediaFixtures.jpeg(), ".jpg");
         assertStoredThumbnailExtension("cover.png", "image/png", png(), ".png");
         assertStoredThumbnailExtension("cover.webp", "image/webp",
-                concat("RIFF".getBytes(StandardCharsets.US_ASCII), bytes(0, 0, 0, 0),
-                        "WEBP".getBytes(StandardCharsets.US_ASCII)), ".webp");
+                MediaFixtures.webp(), ".webp");
     }
 
     @Test
@@ -85,6 +88,53 @@ class VideoServiceStorageTest {
         assertRejected(upload("file", "video.mp4", "video/mp4", mp4()),
                 upload("thumbnail", "cover.png", "image/png",
                         "<svg xmlns=\"http://www.w3.org/2000/svg\"/>".getBytes(StandardCharsets.UTF_8)));
+    }
+
+    @Test
+    void rejectsPrefixOnlyTruncatedContainersAndImagesWithoutLeavingTemporaryFiles() {
+        assertRejected(upload("file", "truncated.mp4", "video/mp4",
+                bytes(0, 0, 0, 8, 'f', 't', 'y', 'p')), null);
+        assertRejected(upload("file", "truncated.webm", "video/webm",
+                bytes(0x1A, 0x45, 0xDF, 0xA3)), null);
+        assertRejected(upload("file", "truncated.ogv", "video/ogg",
+                "OggS".getBytes(StandardCharsets.US_ASCII)), null);
+        assertRejected(upload("file", "video.mp4", "video/mp4", mp4()),
+                upload("thumbnail", "truncated.jpg", "image/jpeg", bytes(0xFF, 0xD8, 0xFF)));
+        assertRejected(upload("file", "video.mp4", "video/mp4", mp4()),
+                upload("thumbnail", "truncated.png", "image/png",
+                        bytes(0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A)));
+        assertRejected(upload("file", "video.mp4", "video/mp4", mp4()),
+                upload("thumbnail", "truncated.webp", "image/webp",
+                        concat("RIFF".getBytes(StandardCharsets.US_ASCII), bytes(0, 0, 0, 0),
+                                "WEBP".getBytes(StandardCharsets.US_ASCII))));
+    }
+
+    @Test
+    void streamsLargeUploadsWithoutCallingGetBytesOrLeavingTemporaryFiles() throws Exception {
+        when(repository.save(any())).thenAnswer(invocation -> invocation.getArgument(0));
+        long payloadSize = 8L * 1024 * 1024;
+
+        Video saved = service().uploadVideo(user(), "Title", "Description",
+                new StreamingMultipartFile("large.mp4", "video/mp4", payloadSize), null);
+
+        Path stored = temp.resolve("pending-videos").resolve(saved.getFilePath());
+        assertEquals(payloadSize + 40, Files.size(stored));
+        try (var files = Files.list(stored.getParent())) {
+            assertTrue(files.noneMatch(path -> path.getFileName().toString().contains(".upload-")));
+        }
+    }
+
+    @Test
+    void rejectsUploadsBeyondTheStreamingLimitAndCleansTheTemporaryFile() {
+        long payloadSize = 33L * 1024 * 1024;
+
+        IllegalArgumentException failure = assertThrows(IllegalArgumentException.class,
+                () -> service().uploadVideo(user(), "Title", "Description",
+                        new StreamingMultipartFile("too-large.mp4", "video/mp4", payloadSize), null));
+
+        assertTrue(failure.getMessage().contains("32 MB limit"));
+        assertDirectoryEmpty(temp.resolve("pending-videos"));
+        verify(repository, never()).save(any());
     }
 
     @Test
@@ -170,11 +220,11 @@ class VideoServiceStorageTest {
     }
 
     private static byte[] mp4() {
-        return bytes(0, 0, 0, 24, 'f', 't', 'y', 'p', 'i', 's', 'o', 'm');
+        return MediaFixtures.mp4();
     }
 
     private static byte[] png() {
-        return bytes(0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A);
+        return MediaFixtures.png();
     }
 
     private static byte[] bytes(int... values) {
@@ -207,6 +257,58 @@ class VideoServiceStorageTest {
             assertEquals(0, entries.count());
         } catch (Exception exception) {
             fail(exception);
+        }
+    }
+
+    private static final class StreamingMultipartFile implements MultipartFile {
+        private final String originalFilename;
+        private final String contentType;
+        private final long payloadSize;
+
+        private StreamingMultipartFile(String originalFilename, String contentType, long payloadSize) {
+            this.originalFilename = originalFilename;
+            this.contentType = contentType;
+            this.payloadSize = payloadSize;
+        }
+
+        @Override
+        public String getName() {
+            return "file";
+        }
+
+        @Override
+        public String getOriginalFilename() {
+            return originalFilename;
+        }
+
+        @Override
+        public String getContentType() {
+            return contentType;
+        }
+
+        @Override
+        public boolean isEmpty() {
+            return false;
+        }
+
+        @Override
+        public long getSize() {
+            return payloadSize + 40;
+        }
+
+        @Override
+        public byte[] getBytes() {
+            throw new AssertionError("getBytes must not be called");
+        }
+
+        @Override
+        public InputStream getInputStream() {
+            return MediaFixtures.largeMp4(payloadSize);
+        }
+
+        @Override
+        public void transferTo(File destination) throws IOException {
+            throw new AssertionError("transferTo must not be called");
         }
     }
 }
