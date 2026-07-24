@@ -1,4 +1,4 @@
-import { API_BASE_URL } from '../services/api'
+import { API_BASE_URL } from '../config/api'
 
 export const VIDEO_CATEGORIES = {
   全部: [],
