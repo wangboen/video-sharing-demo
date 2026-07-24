@@ -2,6 +2,8 @@ package com.videosharing.videosharingspringboot.controller;
 
 import com.videosharing.videosharingspringboot.model.User;
 import com.videosharing.videosharingspringboot.model.Video;
+import com.videosharing.videosharingspringboot.dto.PublicVideoResponse;
+import com.videosharing.videosharingspringboot.dto.VideoUploadResponse;
 import com.videosharing.videosharingspringboot.service.UserService;
 import com.videosharing.videosharingspringboot.service.VideoService;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -35,7 +37,7 @@ public class VideoController {
             User user = userService.findByUsername(authentication.getName())
                                    .orElseThrow(() -> new RuntimeException("User not found"));
             Video video = videoService.uploadVideo(user, title, description, file, thumbnail);
-            return new ResponseEntity<>(video, HttpStatus.CREATED);
+            return new ResponseEntity<>(VideoUploadResponse.from(video), HttpStatus.CREATED);
         } catch (IOException e) {
             return new ResponseEntity<>("Failed to upload video: " + e.getMessage(), HttpStatus.INTERNAL_SERVER_ERROR);
         } catch (RuntimeException e) {
@@ -44,15 +46,17 @@ public class VideoController {
     }
 
     @GetMapping
-    public ResponseEntity<List<Video>> getAllVideos() {
-        List<Video> videos = videoService.getAllVideos();
+    public ResponseEntity<List<PublicVideoResponse>> getAllVideos() {
+        List<PublicVideoResponse> videos = videoService.getAllVideos().stream()
+                .map(PublicVideoResponse::from)
+                .toList();
         return new ResponseEntity<>(videos, HttpStatus.OK);
     }
 
     @GetMapping("/{id}")
-    public ResponseEntity<Video> getVideoById(@PathVariable Long id) {
+    public ResponseEntity<PublicVideoResponse> getVideoById(@PathVariable Long id) {
         return videoService.getVideoById(id)
-                .map(video -> new ResponseEntity<>(video, HttpStatus.OK))
+                .map(video -> new ResponseEntity<>(PublicVideoResponse.from(video), HttpStatus.OK))
                 .orElse(new ResponseEntity<>(HttpStatus.NOT_FOUND));
     }
 }

@@ -96,7 +96,9 @@ public class ModerationService {
         video.setLeaseOwner(owner);
         video.setClaimedAt(now);
         video.setLeaseExpiresAt(now.plus(leaseDuration));
-        return Optional.of(ModerationVideoResponse.from(videos.save(video)));
+        videos.save(video);
+        videos.flush();
+        return Optional.of(ModerationVideoResponse.from(video));
     }
 
     @Transactional
@@ -104,7 +106,9 @@ public class ModerationService {
         Video video = locked(id);
         assertActiveOwner(video, username);
         video.setLeaseExpiresAt(now().plus(leaseDuration));
-        return ModerationVideoResponse.from(videos.save(video));
+        videos.save(video);
+        videos.flush();
+        return ModerationVideoResponse.from(video);
     }
 
     @Transactional

@@ -1,5 +1,6 @@
 package com.videosharing.videosharingspringboot.service;
 
+import com.videosharing.videosharingspringboot.dto.ModerationDecisionRequest;
 import com.videosharing.videosharingspringboot.dto.ModerationVideoResponse;
 import com.videosharing.videosharingspringboot.model.Role;
 import com.videosharing.videosharingspringboot.model.User;
@@ -73,6 +74,40 @@ class ModerationConcurrencyTest {
         var results = concurrentClaims();
 
         assertEquals(1, (results.first().isPresent() ? 1 : 0) + (results.second().isPresent() ? 1 : 0));
+    }
+
+    @Test
+    void decisionSucceedsWithVersionReturnedByFreshClaim() {
+        User creator = saveUser("creator", Role.USER);
+        saveUser("reviewer-1", Role.REVIEWER);
+        saveVideo(creator, "pending");
+
+        ModerationVideoResponse claim = transactions.execute(
+                status -> moderation.claimNext("reviewer-1").orElseThrow());
+
+        var decision = transactions.execute(status -> moderation.decide(
+                claim.id(), "reviewer-1",
+                new ModerationDecisionRequest("REJECT", "duplicate", claim.version())));
+
+        assertEquals(VideoStatus.REJECTED, decision.status());
+    }
+
+    @Test
+    void decisionSucceedsWithVersionReturnedByHeartbeat() {
+        User creator = saveUser("creator", Role.USER);
+        saveUser("reviewer-1", Role.REVIEWER);
+        saveVideo(creator, "pending");
+        ModerationVideoResponse claim = transactions.execute(
+                status -> moderation.claimNext("reviewer-1").orElseThrow());
+
+        ModerationVideoResponse heartbeat = transactions.execute(
+                status -> moderation.heartbeat(claim.id(), "reviewer-1"));
+
+        var decision = transactions.execute(status -> moderation.decide(
+                heartbeat.id(), "reviewer-1",
+                new ModerationDecisionRequest("REJECT", "duplicate", heartbeat.version())));
+
+        assertEquals(VideoStatus.REJECTED, decision.status());
     }
 
     private ClaimResults concurrentClaims() throws Exception {
