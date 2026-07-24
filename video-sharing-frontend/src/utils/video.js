@@ -1,5 +1,3 @@
-const STATIC_RESOURCE_ROOT = 'http://localhost'
-
 export const VIDEO_CATEGORIES = {
   全部: [],
   音乐: ['音乐', '歌曲', '演唱', 'music'],
@@ -10,11 +8,11 @@ export const VIDEO_CATEGORIES = {
 }
 
 export function getThumbnailUrl(video) {
-  return video?.thumbnailPath ? `${STATIC_RESOURCE_ROOT}/thumbnails/${video.thumbnailPath}` : ''
+  return video?.thumbnailUrl || ''
 }
 
 export function getVideoUrl(video) {
-  return video?.filePath ? `${STATIC_RESOURCE_ROOT}/uploads/${video.filePath}` : ''
+  return video?.videoUrl || ''
 }
 
 export function formatViews(value) {

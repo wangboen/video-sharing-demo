@@ -2,7 +2,7 @@
 import { ref } from 'vue';
 import { useRouter } from 'vue-router';
 import api from '../services/api';
-import { saveAuth } from '../services/auth';
+import { clearAuth, PUBLIC_ACCESS_ERROR, saveAuth, USER_ROLE } from '../services/auth';
 import { friendlyApiError } from '../utils/apiError';
 
 const username = ref('');
@@ -10,6 +10,10 @@ const password = ref('');
 const error = ref('');
 const submitting = ref(false);
 const router = useRouter();
+
+if (router.currentRoute.value.query.error === 'access-denied') {
+  error.value = PUBLIC_ACCESS_ERROR;
+}
 
 const handleLogin = async () => {
   if (submitting.value) return;
@@ -21,6 +25,11 @@ const handleLogin = async () => {
       username: username.value,
       password: password.value,
     });
+    if (response.data.role !== USER_ROLE) {
+      clearAuth();
+      error.value = PUBLIC_ACCESS_ERROR;
+      return;
+    }
     saveAuth(response.data);
     const redirect = typeof router.currentRoute.value.query.redirect === 'string'
       && router.currentRoute.value.query.redirect.startsWith('/')

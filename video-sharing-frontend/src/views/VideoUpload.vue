@@ -59,7 +59,7 @@ const handleUpload = async () => {
       },
     });
 
-    successMessage.value = '视频发布成功';
+    successMessage.value = '视频已提交审核';
     title.value = '';
     description.value = '';
     selectedFile.value = null;
@@ -122,7 +122,7 @@ onBeforeUnmount(revokeThumbnailPreview);
           <button type="submit" :disabled="uploading">{{ uploading ? '正在发布…' : '立即发布' }}</button>
           <p v-if="error" class="error-message" role="alert">{{ error }}</p>
           <p v-if="successMessage" class="success-message" role="status">
-            {{ successMessage }}，<RouterLink to="/videos">浏览视频</RouterLink>
+            {{ successMessage }}，<RouterLink to="/dashboard">查看我的投稿</RouterLink>
           </p>
         </div>
       </form>

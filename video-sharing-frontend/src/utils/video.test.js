@@ -10,11 +10,11 @@ import {
 } from './video'
 
 describe('video utilities', () => {
-  it('creates static asset URLs and handles missing paths', () => {
-    expect(getThumbnailUrl({ thumbnailPath: 'cover.jpg' })).toBe('http://localhost/thumbnails/cover.jpg')
-    expect(getThumbnailUrl({ thumbnailPath: null })).toBe('')
-    expect(getVideoUrl({ filePath: 'clip.mp4' })).toBe('http://localhost/uploads/clip.mp4')
-    expect(getVideoUrl({ filePath: undefined })).toBe('')
+  it('uses safe API URLs and handles missing URLs', () => {
+    expect(getThumbnailUrl({ thumbnailUrl: '/media/cover.jpg' })).toBe('/media/cover.jpg')
+    expect(getThumbnailUrl({ thumbnailUrl: null })).toBe('')
+    expect(getVideoUrl({ videoUrl: '/media/clip.mp4' })).toBe('/media/clip.mp4')
+    expect(getVideoUrl({ videoUrl: undefined })).toBe('')
   })
 
   it('formats view counts with Chinese labels', () => {

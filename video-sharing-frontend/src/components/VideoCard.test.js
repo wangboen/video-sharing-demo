@@ -32,7 +32,7 @@ describe('VideoCard', () => {
 
   it('switches to the branded fallback when the thumbnail fails to load', async () => {
     const wrapper = mount(VideoCard, {
-      props: { video: { id: 7, title: '损坏封面', thumbnailPath: 'broken.jpg' } },
+      props: { video: { id: 7, title: '损坏封面', thumbnailUrl: '/media/broken.jpg' } },
       global,
     })
 

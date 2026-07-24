@@ -6,7 +6,7 @@ import UserDashboard from '../views/UserDashboard.vue'
 import VideoUpload from '../views/VideoUpload.vue'
 import VideoList from '../views/VideoList.vue'
 import VideoPlayer from '../views/VideoPlayer.vue' // Import VideoPlayer component
-import { getAuthToken, getStoredUser } from '../services/auth'
+import { clearAuth, getAuthToken, getStoredUser, USER_ROLE } from '../services/auth'
 
 const router = createRouter({
   history: createWebHistory(import.meta.env.BASE_URL),
@@ -63,8 +63,14 @@ const router = createRouter({
 })
 
 router.beforeEach((to) => {
-  if (to.meta.requiresAuth && (!getAuthToken() || !getStoredUser())) {
+  const storedUser = getStoredUser()
+  if (to.meta.requiresAuth && (!getAuthToken() || !storedUser)) {
     return { name: 'login', query: { redirect: to.fullPath } }
+  }
+
+  if (to.meta.requiresAuth && storedUser.role !== USER_ROLE) {
+    clearAuth()
+    return { name: 'login', query: { redirect: to.fullPath, error: 'access-denied' } }
   }
 })
 

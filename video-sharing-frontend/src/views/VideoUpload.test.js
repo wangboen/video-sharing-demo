@@ -89,8 +89,8 @@ describe('视频发布页', () => {
     await wrapper.get('form').trigger('submit')
     await flushPromises()
 
-    expect(wrapper.text()).toContain('视频发布成功')
-    expect(wrapper.get('a[href="/videos"]').text()).toContain('浏览视频')
+    expect(wrapper.text()).toContain('视频已提交审核')
+    expect(wrapper.get('a[href="/dashboard"]').text()).toContain('查看我的投稿')
   })
 
   it('发布请求进行中时不会重复提交', async () => {

@@ -2,7 +2,7 @@
 import { ref, onMounted, watch } from 'vue';
 import { RouterView, useRoute } from 'vue-router';
 import api from './services/api';
-import { clearAuth, getAuthToken, getStoredUser, updateStoredUser } from './services/auth';
+import { clearAuth, getAuthToken, getStoredUser, updateStoredUser, USER_ROLE } from './services/auth';
 import { useSidebar } from './composables/useSidebar';
 import AppHeader from './components/AppHeader.vue';
 import AppSidebar from './components/AppSidebar.vue';
@@ -13,9 +13,10 @@ const { isCollapsed, toggleSidebar } = useSidebar();
 
 const checkUserStatus = () => {
   const storedUser = getStoredUser();
-  if (storedUser) {
+  if (storedUser?.role === USER_ROLE) {
     user.value = storedUser;
   } else {
+    if (storedUser) clearAuth();
     user.value = null;
   }
 };
@@ -25,6 +26,12 @@ onMounted(() => {
   if (getAuthToken()) {
     api.get('/api/auth/me')
       .then((response) => {
+        if (response.data.role !== USER_ROLE) {
+          clearAuth();
+          user.value = null;
+          window.location.assign('/login?error=access-denied');
+          return;
+        }
         updateStoredUser(response.data);
         user.value = response.data;
       })

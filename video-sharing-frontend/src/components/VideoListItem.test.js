@@ -19,13 +19,13 @@ describe('VideoListItem', () => {
         video: {
           id: 9,
           title: '夜晚城市',
-          thumbnailPath: 'city-night.jpg',
+          thumbnailUrl: '/media/city-night.jpg',
           user: { username: '小林' },
         },
       },
     })
 
-    expect(wrapper.get('img').attributes('src')).toBe('http://localhost/thumbnails/city-night.jpg')
+    expect(wrapper.get('img').attributes('src')).toBe('/media/city-night.jpg')
     expect(wrapper.text()).toContain('夜晚城市')
     expect(wrapper.text()).toContain('小林')
     expect(wrapper.get('a').attributes('href')).toBe('/video/9')
@@ -45,7 +45,7 @@ describe('VideoListItem', () => {
   it('switches to the branded fallback when a recommendation thumbnail fails', async () => {
     const wrapper = mount(VideoListItem, {
       global,
-      props: { video: { id: 9, title: '损坏封面', thumbnailPath: 'broken.jpg' } },
+      props: { video: { id: 9, title: '损坏封面', thumbnailUrl: '/media/broken.jpg' } },
     })
 
     await wrapper.get('img').trigger('error')

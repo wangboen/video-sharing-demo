@@ -2,7 +2,7 @@
 import { ref } from 'vue';
 import { useRouter } from 'vue-router';
 import api from '../services/api';
-import { saveAuth } from '../services/auth';
+import { clearAuth, PUBLIC_ACCESS_ERROR, saveAuth, USER_ROLE } from '../services/auth';
 import { friendlyApiError } from '../utils/apiError';
 
 const username = ref('');
@@ -23,6 +23,11 @@ const handleRegister = async () => {
       email: email.value,
       password: password.value,
     });
+    if (response.data.role !== USER_ROLE) {
+      clearAuth();
+      error.value = PUBLIC_ACCESS_ERROR;
+      return;
+    }
     saveAuth(response.data);
     router.push('/');
   } catch (err) {

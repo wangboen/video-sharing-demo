@@ -60,7 +60,7 @@ describe('视界路由', () => {
     ]
 
     localStorage.setItem('authToken', 'title-test-token')
-    localStorage.setItem('user', JSON.stringify({ id: 1, username: '标题测试' }))
+    localStorage.setItem('user', JSON.stringify({ id: 1, username: '标题测试', role: 'USER' }))
 
     for (const [path, title] of navigations) {
       await router.push(path)
