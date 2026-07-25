@@ -16,7 +16,6 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.List;
-import java.util.Optional;
 import java.util.UUID;
 
 @Service
@@ -86,16 +85,6 @@ public class VideoService {
 
     public List<Video> getAllVideos() {
         return videoRepository.findAllByStatusOrderByUploadDateAscIdAsc(VideoStatus.APPROVED);
-    }
-
-    public Optional<Video> getVideoById(Long id) {
-        // Increment view count when video is accessed
-        Optional<Video> videoOptional = videoRepository.findByIdAndStatus(id, VideoStatus.APPROVED);
-        videoOptional.ifPresent(video -> {
-            video.setViews(video.getViews() + 1);
-            videoRepository.save(video);
-        });
-        return videoOptional;
     }
 
     public List<UserSubmissionResponse> getSubmissions(User user) {

@@ -168,7 +168,7 @@ class VideoServiceStorageTest {
     @Test
     void streamsLargeUploadsWithoutCallingGetBytesOrLeavingTemporaryFiles() throws Exception {
         when(repository.save(any())).thenAnswer(invocation -> invocation.getArgument(0));
-        long payloadSize = 8L * 1024 * 1024;
+        long payloadSize = 33L * 1024 * 1024;
 
         Video saved = service().uploadVideo(user(), "Title", "Description",
                 new StreamingMultipartFile("large.mp4", "video/mp4", payloadSize), null);
@@ -181,15 +181,30 @@ class VideoServiceStorageTest {
     }
 
     @Test
-    void rejectsUploadsBeyondTheStreamingLimitAndCleansTheTemporaryFile() {
-        long payloadSize = 33L * 1024 * 1024;
+    void rejectsVideosBeyond512MbWithoutOpeningTheUpload() {
+        long payloadSize = 513L * 1024 * 1024;
 
         IllegalArgumentException failure = assertThrows(IllegalArgumentException.class,
                 () -> service().uploadVideo(user(), "Title", "Description",
                         new StreamingMultipartFile("too-large.mp4", "video/mp4", payloadSize), null));
 
+        assertTrue(failure.getMessage().contains("512 MB limit"));
+        assertDirectoryEmpty(temp.resolve("pending-videos"));
+        verify(repository, never()).save(any());
+    }
+
+    @Test
+    void keepsThumbnailLimitAt32Mb() {
+        long payloadSize = 33L * 1024 * 1024;
+
+        IllegalArgumentException failure = assertThrows(IllegalArgumentException.class,
+                () -> service().uploadVideo(user(), "Title", "Description",
+                        upload("file", "video.mp4", "video/mp4", mp4()),
+                        new StreamingMultipartFile("cover.png", "image/png", payloadSize)));
+
         assertTrue(failure.getMessage().contains("32 MB limit"));
         assertDirectoryEmpty(temp.resolve("pending-videos"));
+        assertDirectoryEmpty(temp.resolve("pending-thumbnails"));
         verify(repository, never()).save(any());
     }
 
@@ -213,12 +228,6 @@ class VideoServiceStorageTest {
     void publicListRequestsOnlyApprovedVideos() {
         service().getAllVideos();
         verify(repository).findAllByStatusOrderByUploadDateAscIdAsc(VideoStatus.APPROVED);
-    }
-
-    @Test
-    void publicDetailDoesNotExposePendingId() {
-        service().getVideoById(10L);
-        verify(repository).findByIdAndStatus(10L, VideoStatus.APPROVED);
     }
 
     @Test

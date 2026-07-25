@@ -1,5 +1,6 @@
 package com.videosharing.videosharingspringboot.security;
 
+import com.videosharing.videosharingspringboot.model.StaffAccount;
 import com.videosharing.videosharingspringboot.model.User;
 import io.jsonwebtoken.Claims;
 import io.jsonwebtoken.Jwts;
@@ -17,6 +18,8 @@ import java.util.UUID;
 
 @Service
 public class JwtService {
+    public static final String ACCOUNT_TYPE_USER = "USER";
+    public static final String ACCOUNT_TYPE_STAFF = "STAFF";
 
     private final SecretKey signingKey;
     private final long expirationMs;
@@ -27,11 +30,20 @@ public class JwtService {
     }
 
     public String generateToken(User user) {
+        return generateToken(user.getUsername(), user.getId(), ACCOUNT_TYPE_USER);
+    }
+
+    public String generateStaffToken(StaffAccount staff) {
+        return generateToken(staff.getUsername(), staff.getId(), ACCOUNT_TYPE_STAFF);
+    }
+
+    private String generateToken(String username, Long id, String accountType) {
         Instant now = Instant.now();
         return Jwts.builder()
-                .setSubject(user.getUsername())
+                .setSubject(username)
                 .setId(UUID.randomUUID().toString())
-                .claim("userId", user.getId())
+                .claim("userId", id)
+                .claim("accountType", accountType)
                 .setIssuedAt(Date.from(now))
                 .setExpiration(Date.from(now.plusMillis(expirationMs)))
                 .signWith(signingKey, SignatureAlgorithm.HS256)
@@ -49,6 +61,11 @@ public class JwtService {
     public Long extractUserId(String token) {
         Number userId = extractClaims(token).get("userId", Number.class);
         return userId == null ? null : userId.longValue();
+    }
+
+    public String extractAccountType(String token) {
+        String accountType = extractClaims(token).get("accountType", String.class);
+        return accountType == null ? ACCOUNT_TYPE_USER : accountType;
     }
 
     public Duration getExpiration() {

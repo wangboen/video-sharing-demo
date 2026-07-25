@@ -63,7 +63,30 @@ async function loadPage() {
     saved.value = false
   }
 
-  const currentVideoRequest = api.get(`/api/videos/${videoId}`)
+  try {
+    const response = await api.get('/api/videos')
+    if (!isLatestRequest()) return
+    const list = Array.isArray(response.data) ? response.data : []
+    const currentVideo = list.find((item) => String(item.id) === String(videoId))
+    if (!currentVideo) {
+      error.value = 'Video not found.'
+      return
+    }
+    video.value = currentVideo
+    recommendations.value = list
+      .filter((item) => String(item.id) !== String(videoId))
+      .slice(0, 12)
+  } catch {
+    if (isLatestRequest()) error.value = 'Unable to load video.'
+  } finally {
+    if (isLatestRequest()) {
+      loading.value = false
+      recommendationsLoading.value = false
+    }
+  }
+  return
+
+  const currentVideoRequest = api.get('/api/videos')
     .then((response) => {
       if (isLatestRequest()) video.value = response.data
     })

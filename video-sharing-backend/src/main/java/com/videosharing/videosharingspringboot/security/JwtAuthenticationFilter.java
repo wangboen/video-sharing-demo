@@ -13,6 +13,9 @@ import org.springframework.web.filter.OncePerRequestFilter;
 
 import java.io.IOException;
 import java.util.List;
+
+import com.videosharing.videosharingspringboot.model.Role;
+import com.videosharing.videosharingspringboot.repository.StaffAccountRepository;
 import com.videosharing.videosharingspringboot.repository.UserRepository;
 
 @Component
@@ -21,12 +24,15 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
     private final JwtService jwtService;
     private final RedisSessionService redisSessionService;
     private final UserRepository userRepository;
+    private final StaffAccountRepository staffAccountRepository;
 
     public JwtAuthenticationFilter(JwtService jwtService, RedisSessionService redisSessionService,
-                                   UserRepository userRepository) {
+                                   UserRepository userRepository,
+                                   StaffAccountRepository staffAccountRepository) {
         this.jwtService = jwtService;
         this.redisSessionService = redisSessionService;
         this.userRepository = userRepository;
+        this.staffAccountRepository = staffAccountRepository;
     }
 
     @Override
@@ -41,20 +47,29 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
                 String username = jwtService.extractUsername(token);
                 String sessionId = jwtService.extractSessionId(token);
                 Long userId = jwtService.extractUserId(token);
+                String accountType = jwtService.extractAccountType(token);
                 if (sessionId != null && userId != null && redisSessionService.isSessionActive(sessionId, userId)) {
-                    userRepository.findById(userId)
-                            .filter(user -> username.equals(user.getUsername()))
-                            .ifPresent(user -> {
-                                UsernamePasswordAuthenticationToken authentication =
-                                        new UsernamePasswordAuthenticationToken(username, null,
-                                                List.of(new SimpleGrantedAuthority("ROLE_" + user.getRole().name())));
-                                authentication.setDetails(new WebAuthenticationDetailsSource().buildDetails(request));
-                                SecurityContextHolder.getContext().setAuthentication(authentication);
-                            });
+                    if (JwtService.ACCOUNT_TYPE_STAFF.equals(accountType)) {
+                        staffAccountRepository.findById(userId)
+                                .filter(staff -> username.equals(staff.getUsername()))
+                                .ifPresent(staff -> authenticate(request, username, staff.getRole()));
+                    } else {
+                        userRepository.findById(userId)
+                                .filter(user -> username.equals(user.getUsername()))
+                                .ifPresent(user -> authenticate(request, username, user.getRole()));
+                    }
                 }
             }
         }
 
         filterChain.doFilter(request, response);
+    }
+
+    private void authenticate(HttpServletRequest request, String username, Role role) {
+        UsernamePasswordAuthenticationToken authentication =
+                new UsernamePasswordAuthenticationToken(username, null,
+                        List.of(new SimpleGrantedAuthority("ROLE_" + role.name())));
+        authentication.setDetails(new WebAuthenticationDetailsSource().buildDetails(request));
+        SecurityContextHolder.getContext().setAuthentication(authentication);
     }
 }

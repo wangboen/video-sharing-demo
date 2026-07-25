@@ -1,0 +1,42 @@
+package com.videosharing.videosharingspringboot.config;
+
+import org.junit.jupiter.api.Test;
+
+import java.io.IOException;
+import java.nio.charset.StandardCharsets;
+
+import static org.assertj.core.api.Assertions.assertThat;
+
+class SchemaSqlTest {
+
+    @Test
+    void freshSchemaSeparatesPublicUsersFromStaffAccounts() throws IOException {
+        try (var stream = getClass().getResourceAsStream("/schema.sql")) {
+            assertThat(stream).isNotNull();
+            String schema = new String(stream.readAllBytes(), StandardCharsets.UTF_8)
+                    .toLowerCase()
+                    .replaceAll("\\s+", " ");
+
+            assertThat(schema)
+                    .contains("create table users")
+                    .doesNotContain("constraint chk_users_role")
+                    .doesNotContain("role varchar(20) not null default 'user'")
+                    .contains("create table staff_accounts")
+                    .contains("role varchar(20) not null")
+                    .contains("constraint chk_staff_accounts_role check (role in ('reviewer', 'admin'))")
+                    .contains("status varchar(20) not null default 'pending'")
+                    .contains("reviewer_id bigint null")
+                    .contains("version bigint not null default 0")
+                    .contains("lease_owner_id bigint null")
+                    .contains("claimed_at datetime(6) null")
+                    .contains("lease_expires_at datetime(6) null")
+                    .contains("foreign key (user_id) references users(id) on delete cascade")
+                    .contains("foreign key (reviewer_id) references staff_accounts(id) on delete set null")
+                    .contains("foreign key (lease_owner_id) references staff_accounts(id) on delete set null")
+                    .contains("create index idx_videos_status_upload_id on videos (status, upload_date, id)")
+                    .contains("create index idx_videos_lease_owner_status_expiry on videos (lease_owner_id, status, lease_expires_at)")
+                    .contains("create index idx_videos_user_upload_id on videos (user_id, upload_date, id)")
+                    .contains("create index idx_staff_accounts_role_username on staff_accounts (role, username)");
+        }
+    }
+}

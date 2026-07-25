@@ -22,19 +22,56 @@ public class LegacyUserRoleMigration implements CommandLineRunner {
 
     @Override
     public void run(String... args) {
+        if (!hasColumn("users", "role")) {
+            return;
+        }
         jdbc.update("update users set role = 'USER' where role is null");
-        jdbc.execute(notNullStatement());
+        if (hasTable("staff_accounts")) {
+            jdbc.update("""
+                    insert into staff_accounts (id, username, password, email, role, created_at, updated_at)
+                    select u.id, u.username, u.password, u.email, u.role, u.created_at, u.updated_at
+                    from users u
+                    where u.role in ('REVIEWER', 'ADMIN')
+                      and not exists (
+                          select 1
+                          from staff_accounts s
+                          where s.username = u.username
+                      )
+                    """);
+        }
     }
 
-    private String notNullStatement() {
+    private boolean hasTable(String table) {
+        return hasMetadataMatch(table, null);
+    }
+
+    private boolean hasColumn(String table, String column) {
+        return hasMetadataMatch(table, column);
+    }
+
+    private boolean hasMetadataMatch(String table, String column) {
         try (var connection = dataSource.getConnection()) {
-            String product = connection.getMetaData().getDatabaseProductName().toLowerCase();
-            if (product.contains("mysql") || product.contains("mariadb")) {
-                return "alter table users modify column role varchar(20) not null";
+            var metadata = connection.getMetaData();
+            if (column == null) {
+                try (var tables = metadata.getTables(connection.getCatalog(), null, table, null)) {
+                    if (tables.next()) {
+                        return true;
+                    }
+                }
+                try (var tables = metadata.getTables(connection.getCatalog(), null, table.toUpperCase(), null)) {
+                    return tables.next();
+                }
             }
-            return "alter table users alter column role varchar(20) not null";
+            try (var columns = metadata.getColumns(connection.getCatalog(), null, table, column)) {
+                if (columns.next()) {
+                    return true;
+                }
+            }
+            try (var columns = metadata.getColumns(connection.getCatalog(), null, table.toUpperCase(), column.toUpperCase())) {
+                return columns.next();
+            }
         } catch (SQLException exception) {
-            throw new IllegalStateException("Could not determine database dialect for user role migration", exception);
+            throw new IllegalStateException("Could not inspect database metadata for user role migration", exception);
         }
     }
 }

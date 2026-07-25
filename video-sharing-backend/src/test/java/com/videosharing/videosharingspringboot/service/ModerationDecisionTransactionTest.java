@@ -2,10 +2,10 @@ package com.videosharing.videosharingspringboot.service;
 
 import com.videosharing.videosharingspringboot.dto.ModerationDecisionRequest;
 import com.videosharing.videosharingspringboot.model.Role;
-import com.videosharing.videosharingspringboot.model.User;
+import com.videosharing.videosharingspringboot.model.StaffAccount;
 import com.videosharing.videosharingspringboot.model.Video;
 import com.videosharing.videosharingspringboot.model.VideoStatus;
-import com.videosharing.videosharingspringboot.repository.UserRepository;
+import com.videosharing.videosharingspringboot.repository.StaffAccountRepository;
 import com.videosharing.videosharingspringboot.repository.VideoRepository;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
@@ -33,9 +33,9 @@ class ModerationDecisionTransactionTest {
     @Test
     void commitFailureIsCaughtOutsideOwnedTransactionAndCompensatedSynchronously() throws Exception {
         VideoRepository videos = mock(VideoRepository.class);
-        UserRepository users = mock(UserRepository.class);
+        StaffAccountRepository staffAccounts = mock(StaffAccountRepository.class);
         Instant now = Instant.parse("2026-07-24T03:00:00Z");
-        User reviewer = new User();
+        StaffAccount reviewer = new StaffAccount();
         reviewer.setId(2L);
         reviewer.setUsername("reviewer");
         reviewer.setRole(Role.REVIEWER);
@@ -62,7 +62,7 @@ class ModerationDecisionTransactionTest {
         var dataSource = new DriverManagerDataSource(
                 "jdbc:h2:mem:moderation-" + UUID.randomUUID() + ";DB_CLOSE_DELAY=-1");
         var transaction = new TransactionTemplate(new DataSourceTransactionManager(dataSource));
-        var service = new ModerationService(videos, users,
+        var service = new ModerationService(videos, staffAccounts,
                 temp.resolve("pending-videos"), temp.resolve("pending-thumbnails"),
                 temp.resolve("public-videos"), temp.resolve("public-thumbnails"),
                 Duration.ofMinutes(15), Clock.fixed(now, ZoneOffset.UTC), transaction);

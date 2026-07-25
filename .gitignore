@@ -26,6 +26,7 @@ npminstall-debug.log*
 # Runtime-generated media
 uploads/
 thumbnails/
+pending/
 
 # Logs
 *.log

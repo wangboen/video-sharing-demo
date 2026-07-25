@@ -6,7 +6,7 @@ import com.videosharing.videosharingspringboot.dto.ModerationVideoResponse;
 import com.videosharing.videosharingspringboot.model.Role;
 import com.videosharing.videosharingspringboot.service.ModerationPreview;
 import com.videosharing.videosharingspringboot.service.ModerationService;
-import com.videosharing.videosharingspringboot.service.UserService;
+import com.videosharing.videosharingspringboot.service.StaffAccountService;
 import jakarta.validation.Valid;
 import org.springframework.core.io.Resource;
 import org.springframework.http.ContentDisposition;
@@ -27,11 +27,11 @@ import org.springframework.web.bind.annotation.RestController;
 @RequestMapping("/api/moderation/videos")
 public class ModerationController {
     private final ModerationService moderation;
-    private final UserService users;
+    private final StaffAccountService staffAccounts;
 
-    public ModerationController(ModerationService moderation, UserService users) {
+    public ModerationController(ModerationService moderation, StaffAccountService staffAccounts) {
         this.moderation = moderation;
-        this.users = users;
+        this.staffAccounts = staffAccounts;
     }
 
     @PostMapping("/claim-next")
@@ -50,7 +50,7 @@ public class ModerationController {
     public ResponseEntity<Void> release(@PathVariable Long id,
                                         @RequestParam(defaultValue = "false") boolean force,
                                         Authentication authentication) {
-        Role role = users.findByUsername(authentication.getName())
+        Role role = staffAccounts.findByUsername(authentication.getName())
                 .orElseThrow()
                 .getRole();
         moderation.release(id, authentication.getName(), force, role);

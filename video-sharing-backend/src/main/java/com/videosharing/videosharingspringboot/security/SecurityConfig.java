@@ -43,7 +43,7 @@ public class SecurityConfig {
                         .requestMatchers(HttpMethod.OPTIONS, "/**").permitAll()
                         .requestMatchers("/api/auth/register", "/api/auth/login", "/api/staff/auth/login",
                                 "/uploads/**", "/thumbnails/**").permitAll()
-                        .requestMatchers(HttpMethod.GET, "/api/videos/**").permitAll()
+                        .requestMatchers(HttpMethod.GET, "/api/videos").permitAll()
                         .requestMatchers("/api/admin/**").hasRole("ADMIN")
                         .requestMatchers("/api/moderation/**").hasAnyRole("REVIEWER", "ADMIN")
                         .requestMatchers("/api/videos/upload", "/api/users/me/videos").hasRole("USER")

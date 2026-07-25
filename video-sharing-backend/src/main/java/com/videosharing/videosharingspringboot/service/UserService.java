@@ -8,7 +8,6 @@ import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 
 import java.util.Optional;
-import java.util.List;
 
 @Service
 public class UserService {
@@ -22,14 +21,10 @@ public class UserService {
     }
 
     public User registerUser(String username, String email, String password) {
-        return createAccount(username, email, password, Role.USER);
+        return createAccount(username, email, password);
     }
 
-    public User createReviewer(String username, String email, String password) {
-        return createAccount(username, email, password, Role.REVIEWER);
-    }
-
-    public User createAccount(String username, String email, String password, Role role) {
+    public User createAccount(String username, String email, String password) {
         username = username.trim();
         email = email == null || email.isBlank() ? null : email.trim().toLowerCase();
         if (userRepository.existsByUsername(username)) {
@@ -43,20 +38,11 @@ public class UserService {
         user.setUsername(username);
         user.setEmail(email);
         user.setPassword(passwordEncoder.encode(password)); // Encode password
-        user.setRole(role);
         return userRepository.save(user);
     }
 
     public User loginUser(String username, String password) {
         return authenticate(username, password, Role.USER);
-    }
-
-    public User loginStaff(String username, String password) {
-        User user = authenticate(username, password, null);
-        if (user.getRole() != Role.REVIEWER && user.getRole() != Role.ADMIN) {
-            throw new RuntimeException("Invalid username or password");
-        }
-        return user;
     }
 
     private User authenticate(String username, String password, Role requiredRole) {
@@ -77,9 +63,5 @@ public class UserService {
 
     public Optional<User> findUserById(Long id) {
         return userRepository.findById(id);
-    }
-
-    public List<User> listReviewers() {
-        return userRepository.findAllByRoleOrderByUsernameAsc(Role.REVIEWER);
     }
 }

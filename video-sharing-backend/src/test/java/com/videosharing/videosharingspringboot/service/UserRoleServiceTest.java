@@ -1,7 +1,9 @@
 package com.videosharing.videosharingspringboot.service;
 
 import com.videosharing.videosharingspringboot.model.Role;
+import com.videosharing.videosharingspringboot.model.StaffAccount;
 import com.videosharing.videosharingspringboot.model.User;
+import com.videosharing.videosharingspringboot.repository.StaffAccountRepository;
 import com.videosharing.videosharingspringboot.repository.UserRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -21,12 +23,15 @@ import static org.mockito.Mockito.when;
 class UserRoleServiceTest {
 
     @Mock UserRepository repository;
+    @Mock StaffAccountRepository staffRepository;
     @Mock PasswordEncoder encoder;
     private UserService service;
+    private StaffAccountService staffService;
 
     @BeforeEach
     void setUp() {
         service = new UserService(repository, encoder);
+        staffService = new StaffAccountService(staffRepository, encoder);
     }
 
     @Test
@@ -37,23 +42,29 @@ class UserRoleServiceTest {
     }
 
     @Test
-    void userLoginRejectsReviewerCredentials() {
-        when(repository.findByUsername("reviewer")).thenReturn(Optional.of(user(Role.REVIEWER)));
-        when(encoder.matches("password123", "encoded")).thenReturn(true);
+    void userLoginRejectsUnknownStaffCredentialsBecauseStaffLivesInAnotherTable() {
+        when(repository.findByUsername("reviewer")).thenReturn(Optional.empty());
+
         assertThrows(RuntimeException.class, () -> service.loginUser("reviewer", "password123"));
     }
 
     @Test
-    void staffLoginAcceptsReviewerCredentials() {
-        when(repository.findByUsername("reviewer")).thenReturn(Optional.of(user(Role.REVIEWER)));
+    void staffLoginAcceptsReviewerCredentialsFromStaffTable() {
+        when(staffRepository.findByUsername("reviewer")).thenReturn(Optional.of(staff(Role.REVIEWER)));
         when(encoder.matches("password123", "encoded")).thenReturn(true);
-        assertEquals(Role.REVIEWER, service.loginStaff("reviewer", "password123").getRole());
+        assertEquals(Role.REVIEWER, staffService.loginStaff("reviewer", "password123").getRole());
+    }
+
+    @Test
+    void staffServiceRejectsPublicUserRole() {
+        assertThrows(IllegalArgumentException.class,
+                () -> staffService.createAccount("staff", "staff@example.com", "password123", Role.USER));
     }
 
     @Test
     void adminCreatesReviewerWithoutAllowingRoleEscalation() {
-        stubAccountCreation();
-        User reviewer = service.createReviewer("reviewer", "reviewer@example.com", "password123");
+        stubStaffAccountCreation();
+        StaffAccount reviewer = staffService.createReviewer("reviewer", "reviewer@example.com", "password123");
         assertEquals(Role.REVIEWER, reviewer.getRole());
     }
 
@@ -65,8 +76,21 @@ class UserRoleServiceTest {
         return user;
     }
 
+    private StaffAccount staff(Role role) {
+        StaffAccount staff = new StaffAccount();
+        staff.setUsername("reviewer");
+        staff.setPassword("encoded");
+        staff.setRole(role);
+        return staff;
+    }
+
     private void stubAccountCreation() {
         when(encoder.encode(any())).thenReturn("encoded");
         when(repository.save(any())).thenAnswer(invocation -> invocation.getArgument(0));
+    }
+
+    private void stubStaffAccountCreation() {
+        when(encoder.encode(any())).thenReturn("encoded");
+        when(staffRepository.save(any())).thenAnswer(invocation -> invocation.getArgument(0));
     }
 }

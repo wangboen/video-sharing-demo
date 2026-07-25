@@ -4,10 +4,10 @@ import com.videosharing.videosharingspringboot.dto.ModerationDecisionRequest;
 import com.videosharing.videosharingspringboot.dto.ModerationDecisionResponse;
 import com.videosharing.videosharingspringboot.dto.ModerationVideoResponse;
 import com.videosharing.videosharingspringboot.model.Role;
-import com.videosharing.videosharingspringboot.model.User;
+import com.videosharing.videosharingspringboot.model.StaffAccount;
 import com.videosharing.videosharingspringboot.model.Video;
 import com.videosharing.videosharingspringboot.model.VideoStatus;
-import com.videosharing.videosharingspringboot.repository.UserRepository;
+import com.videosharing.videosharingspringboot.repository.StaffAccountRepository;
 import com.videosharing.videosharingspringboot.repository.VideoRepository;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
@@ -40,7 +40,7 @@ public class ModerationService {
     private static final Duration STAFF_HEARTBEAT_INTERVAL = Duration.ofSeconds(60);
 
     private final VideoRepository videos;
-    private final UserRepository users;
+    private final StaffAccountRepository staffAccounts;
     private final Path pendingVideos;
     private final Path pendingThumbnails;
     private final Path publicVideos;
@@ -51,33 +51,33 @@ public class ModerationService {
 
     @Autowired
     public ModerationService(VideoRepository videos,
-                             UserRepository users,
+                             StaffAccountRepository staffAccounts,
                              @Value("${file.pending-upload-dir}") String pendingVideos,
                              @Value("${file.pending-thumbnail-dir}") String pendingThumbnails,
                              @Value("${file.upload-dir}") String publicVideos,
                              @Value("${file.thumbnail-dir}") String publicThumbnails,
                              @Value("${moderation.lease-duration-minutes:15}") long leaseMinutes,
                              PlatformTransactionManager transactionManager) {
-        this(videos, users, Paths.get(pendingVideos), Paths.get(pendingThumbnails),
+        this(videos, staffAccounts, Paths.get(pendingVideos), Paths.get(pendingThumbnails),
                 Paths.get(publicVideos), Paths.get(publicThumbnails),
                 Duration.ofMinutes(leaseMinutes), Clock.systemUTC(),
                 decisionTransactionTemplate(transactionManager));
     }
 
     ModerationService(VideoRepository videos,
-                      UserRepository users,
+                      StaffAccountRepository staffAccounts,
                       Path pendingVideos,
                       Path pendingThumbnails,
                       Path publicVideos,
                       Path publicThumbnails,
                       Duration leaseDuration,
                       Clock clock) {
-        this(videos, users, pendingVideos, pendingThumbnails, publicVideos, publicThumbnails,
+        this(videos, staffAccounts, pendingVideos, pendingThumbnails, publicVideos, publicThumbnails,
                 leaseDuration, clock, TransactionOperations.withoutTransaction());
     }
 
     ModerationService(VideoRepository videos,
-                      UserRepository users,
+                      StaffAccountRepository staffAccounts,
                       Path pendingVideos,
                       Path pendingThumbnails,
                       Path publicVideos,
@@ -90,7 +90,7 @@ public class ModerationService {
                     "Moderation lease duration must be greater than the 60-second staff heartbeat interval");
         }
         this.videos = videos;
-        this.users = users;
+        this.staffAccounts = staffAccounts;
         this.pendingVideos = normalize(pendingVideos);
         this.pendingThumbnails = normalize(pendingThumbnails);
         this.publicVideos = normalize(publicVideos);
@@ -103,7 +103,7 @@ public class ModerationService {
     @Transactional
     public Optional<ModerationVideoResponse> claimNext(String username) {
         Instant now = now();
-        User owner = users.findByUsernameForUpdate(username)
+        StaffAccount owner = staffAccounts.findByUsernameForUpdate(username)
                 .orElseThrow(() -> new AccessDeniedException("Staff account not found"));
         if (owner.getRole() != Role.REVIEWER && owner.getRole() != Role.ADMIN) {
             throw new AccessDeniedException("Staff role required");
@@ -381,10 +381,10 @@ public class ModerationService {
         private Long version;
         private String filePath;
         private String thumbnailPath;
-        private User reviewer;
+        private StaffAccount reviewer;
         private Instant reviewedAt;
         private String rejectionReason;
-        private User leaseOwner;
+        private StaffAccount leaseOwner;
         private Instant claimedAt;
         private Instant leaseExpiresAt;
 

@@ -1,8 +1,8 @@
 package com.videosharing.videosharingspringboot.config;
 
 import com.videosharing.videosharingspringboot.model.Role;
-import com.videosharing.videosharingspringboot.model.User;
-import com.videosharing.videosharingspringboot.repository.UserRepository;
+import com.videosharing.videosharingspringboot.model.StaffAccount;
+import com.videosharing.videosharingspringboot.repository.StaffAccountRepository;
 import org.junit.jupiter.api.Test;
 import org.springframework.security.crypto.password.PasswordEncoder;
 
@@ -16,57 +16,57 @@ import org.mockito.ArgumentCaptor;
 
 class AdminBootstrapTest {
 
-    private final UserRepository users = mock(UserRepository.class);
+    private final StaffAccountRepository staffAccounts = mock(StaffAccountRepository.class);
     private final PasswordEncoder encoder = mock(PasswordEncoder.class);
 
     @Test
     void allAbsentSkipsBootstrap() {
-        new AdminBootstrap(users, encoder, "", "", "").run();
-        verifyNoInteractions(users, encoder);
+        new AdminBootstrap(staffAccounts, encoder, "", "", "").run();
+        verifyNoInteractions(staffAccounts, encoder);
     }
 
     @Test
     void partialConfigurationFailsStartup() {
-        AdminBootstrap bootstrap = new AdminBootstrap(users, encoder, "admin", "", "password123");
+        AdminBootstrap bootstrap = new AdminBootstrap(staffAccounts, encoder, "admin", "", "password123");
         assertThrows(IllegalStateException.class, bootstrap::run);
     }
 
     @Test
     void completeConfigurationCreatesAdminExactlyOnce() {
-        when(users.findByUsername("admin")).thenReturn(Optional.empty());
+        when(staffAccounts.findByUsername("admin")).thenReturn(Optional.empty());
         when(encoder.encode("password123")).thenReturn("encoded");
-        when(users.save(any())).thenAnswer(invocation -> invocation.getArgument(0));
+        when(staffAccounts.save(any())).thenAnswer(invocation -> invocation.getArgument(0));
 
-        AdminBootstrap bootstrap = new AdminBootstrap(users, encoder, " admin ",
+        AdminBootstrap bootstrap = new AdminBootstrap(staffAccounts, encoder, " admin ",
                 "ADMIN@example.com", "password123");
         bootstrap.run();
 
-        ArgumentCaptor<User> captor = ArgumentCaptor.forClass(User.class);
-        verify(users).save(captor.capture());
-        User saved = captor.getValue();
+        ArgumentCaptor<StaffAccount> captor = ArgumentCaptor.forClass(StaffAccount.class);
+        verify(staffAccounts).save(captor.capture());
+        StaffAccount saved = captor.getValue();
         assertEquals(Role.ADMIN, saved.getRole());
         assertEquals("admin@example.com", saved.getEmail());
     }
 
     @Test
     void existingAdminIsNotOverwritten() {
-        User admin = new User();
+        StaffAccount admin = new StaffAccount();
         admin.setRole(Role.ADMIN);
-        when(users.findByUsername("admin")).thenReturn(Optional.of(admin));
+        when(staffAccounts.findByUsername("admin")).thenReturn(Optional.of(admin));
 
-        new AdminBootstrap(users, encoder, "admin", "admin@example.com", "password123").run();
+        new AdminBootstrap(staffAccounts, encoder, "admin", "admin@example.com", "password123").run();
 
-        verify(users, never()).save(any());
+        verify(staffAccounts, never()).save(any());
         verifyNoInteractions(encoder);
     }
 
     @Test
     void collidingNonAdminUsernameFailsInsteadOfPromotion() {
-        User user = new User();
-        user.setRole(Role.USER);
-        when(users.findByUsername("admin")).thenReturn(Optional.of(user));
+        StaffAccount reviewer = new StaffAccount();
+        reviewer.setRole(Role.REVIEWER);
+        when(staffAccounts.findByUsername("admin")).thenReturn(Optional.of(reviewer));
 
-        AdminBootstrap bootstrap = new AdminBootstrap(users, encoder, "admin",
+        AdminBootstrap bootstrap = new AdminBootstrap(staffAccounts, encoder, "admin",
                 "admin@example.com", "password123");
         assertThrows(IllegalStateException.class, bootstrap::run);
     }

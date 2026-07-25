@@ -53,10 +53,4 @@ public class VideoController {
         return new ResponseEntity<>(videos, HttpStatus.OK);
     }
 
-    @GetMapping("/{id}")
-    public ResponseEntity<PublicVideoResponse> getVideoById(@PathVariable Long id) {
-        return videoService.getVideoById(id)
-                .map(video -> new ResponseEntity<>(PublicVideoResponse.from(video), HttpStatus.OK))
-                .orElse(new ResponseEntity<>(HttpStatus.NOT_FOUND));
-    }
 }

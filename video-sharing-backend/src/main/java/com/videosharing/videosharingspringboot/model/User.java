@@ -26,8 +26,7 @@ public class User {
     @Column(unique = true, length = 100)
     private String email;
 
-    @Enumerated(EnumType.STRING)
-    @Column(length = 20)
+    @Transient
     private Role role = Role.USER;
 
     @CreationTimestamp

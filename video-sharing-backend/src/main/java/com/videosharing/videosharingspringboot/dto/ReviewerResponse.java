@@ -1,7 +1,7 @@
 package com.videosharing.videosharingspringboot.dto;
 
 import com.videosharing.videosharingspringboot.model.Role;
-import com.videosharing.videosharingspringboot.model.User;
+import com.videosharing.videosharingspringboot.model.StaffAccount;
 
 import java.time.LocalDateTime;
 
@@ -12,8 +12,8 @@ public record ReviewerResponse(
         Role role,
         LocalDateTime createdAt
 ) {
-    public static ReviewerResponse from(User user) {
-        return new ReviewerResponse(user.getId(), user.getUsername(), user.getEmail(),
-                user.getRole(), user.getCreatedAt());
+    public static ReviewerResponse from(StaffAccount staff) {
+        return new ReviewerResponse(staff.getId(), staff.getUsername(), staff.getEmail(),
+                staff.getRole(), staff.getCreatedAt());
     }
 }

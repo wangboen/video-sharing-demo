@@ -64,6 +64,12 @@ describe('same-origin Nginx deployment contract', () => {
     expect(applicationProperties).toMatch(/^file\.pending-thumbnail-dir=\$\{PENDING_THUMBNAIL_DIR:/m)
   })
 
+  it('permits a 512MB video plus a 32MB thumbnail without widening thumbnail validation', () => {
+    expect(applicationProperties).toMatch(/^spring\.servlet\.multipart\.max-file-size=512MB$/m)
+    expect(applicationProperties).toMatch(/^spring\.servlet\.multipart\.max-request-size=545MB$/m)
+    expect(nginx).toMatch(/client_max_body_size\s+545m;/)
+  })
+
   it('requires JWT_SECRET by default and confines the development secret to the dev profile', () => {
     expect(applicationProperties).toMatch(/^jwt\.secret=\$\{JWT_SECRET\}$/m)
     expect(existsSync(applicationDevPropertiesPath)).toBe(true)

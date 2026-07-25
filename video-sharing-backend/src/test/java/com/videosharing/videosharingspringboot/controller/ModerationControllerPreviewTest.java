@@ -2,7 +2,7 @@ package com.videosharing.videosharingspringboot.controller;
 
 import com.videosharing.videosharingspringboot.service.ModerationPreview;
 import com.videosharing.videosharingspringboot.service.ModerationService;
-import com.videosharing.videosharingspringboot.service.UserService;
+import com.videosharing.videosharingspringboot.service.StaffAccountService;
 import org.junit.jupiter.api.Test;
 import org.springframework.core.io.ByteArrayResource;
 import org.springframework.http.MediaType;
@@ -29,7 +29,7 @@ class ModerationControllerPreviewTest {
                 attackerNamedResource, videoMp4, "preview.mp4");
         when(authentication.getName()).thenReturn("reviewer");
         when(moderation.preview(10L, "reviewer", false)).thenReturn(preview);
-        ModerationController controller = new ModerationController(moderation, mock(UserService.class));
+        ModerationController controller = new ModerationController(moderation, mock(StaffAccountService.class));
 
         var response = controller.previewVideo(10L, authentication);
 

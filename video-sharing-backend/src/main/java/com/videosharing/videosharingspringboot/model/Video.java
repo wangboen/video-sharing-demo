@@ -42,7 +42,7 @@ public class Video {
 
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "reviewer_id")
-    private User reviewer;
+    private StaffAccount reviewer;
 
     @Column(name = "reviewed_at")
     private Instant reviewedAt;
@@ -56,7 +56,7 @@ public class Video {
 
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "lease_owner_id")
-    private User leaseOwner;
+    private StaffAccount leaseOwner;
 
     @Column(name = "claimed_at")
     private Instant claimedAt;

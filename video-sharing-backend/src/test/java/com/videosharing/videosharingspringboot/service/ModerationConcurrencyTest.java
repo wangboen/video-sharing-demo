@@ -3,9 +3,11 @@ package com.videosharing.videosharingspringboot.service;
 import com.videosharing.videosharingspringboot.dto.ModerationDecisionRequest;
 import com.videosharing.videosharingspringboot.dto.ModerationVideoResponse;
 import com.videosharing.videosharingspringboot.model.Role;
+import com.videosharing.videosharingspringboot.model.StaffAccount;
 import com.videosharing.videosharingspringboot.model.User;
 import com.videosharing.videosharingspringboot.model.Video;
 import com.videosharing.videosharingspringboot.model.VideoStatus;
+import com.videosharing.videosharingspringboot.repository.StaffAccountRepository;
 import com.videosharing.videosharingspringboot.repository.UserRepository;
 import com.videosharing.videosharingspringboot.repository.VideoRepository;
 import org.junit.jupiter.api.BeforeEach;
@@ -34,6 +36,7 @@ import static org.junit.jupiter.api.Assertions.*;
 class ModerationConcurrencyTest {
     @Autowired VideoRepository videos;
     @Autowired UserRepository users;
+    @Autowired StaffAccountRepository staffAccounts;
     @Autowired TransactionTemplate transactions;
     @TempDir Path temp;
     private ModerationService moderation;
@@ -41,8 +44,9 @@ class ModerationConcurrencyTest {
     @BeforeEach
     void setUp() {
         videos.deleteAll();
+        staffAccounts.deleteAll();
         users.deleteAll();
-        moderation = new ModerationService(videos, users,
+        moderation = new ModerationService(videos, staffAccounts,
                 temp.resolve("pending-videos"), temp.resolve("pending-thumbnails"),
                 temp.resolve("public-videos"), temp.resolve("public-thumbnails"),
                 Duration.ofMinutes(15),
@@ -52,8 +56,8 @@ class ModerationConcurrencyTest {
     @Test
     void twoReviewersClaimingConcurrentlyReceiveDifferentVideos() throws Exception {
         User creator = saveUser("creator", Role.USER);
-        saveUser("reviewer-1", Role.REVIEWER);
-        saveUser("reviewer-2", Role.REVIEWER);
+        saveStaff("reviewer-1", Role.REVIEWER);
+        saveStaff("reviewer-2", Role.REVIEWER);
         saveVideo(creator, "first");
         saveVideo(creator, "second");
 
@@ -67,8 +71,8 @@ class ModerationConcurrencyTest {
     @Test
     void onlyOneReviewerSucceedsWhenOneVideoRemains() throws Exception {
         User creator = saveUser("creator", Role.USER);
-        saveUser("reviewer-1", Role.REVIEWER);
-        saveUser("reviewer-2", Role.REVIEWER);
+        saveStaff("reviewer-1", Role.REVIEWER);
+        saveStaff("reviewer-2", Role.REVIEWER);
         saveVideo(creator, "only");
 
         var results = concurrentClaims();
@@ -79,7 +83,7 @@ class ModerationConcurrencyTest {
     @Test
     void decisionSucceedsWithVersionReturnedByFreshClaim() {
         User creator = saveUser("creator", Role.USER);
-        saveUser("reviewer-1", Role.REVIEWER);
+        saveStaff("reviewer-1", Role.REVIEWER);
         saveVideo(creator, "pending");
 
         ModerationVideoResponse claim = transactions.execute(
@@ -95,7 +99,7 @@ class ModerationConcurrencyTest {
     @Test
     void decisionSucceedsWithVersionReturnedByHeartbeat() {
         User creator = saveUser("creator", Role.USER);
-        saveUser("reviewer-1", Role.REVIEWER);
+        saveStaff("reviewer-1", Role.REVIEWER);
         saveVideo(creator, "pending");
         ModerationVideoResponse claim = transactions.execute(
                 status -> moderation.claimNext("reviewer-1").orElseThrow());
@@ -142,6 +146,15 @@ class ModerationConcurrencyTest {
         user.setPassword("encoded-password");
         user.setRole(role);
         return users.saveAndFlush(user);
+    }
+
+    private StaffAccount saveStaff(String username, Role role) {
+        StaffAccount staff = new StaffAccount();
+        staff.setUsername(username);
+        staff.setEmail(username + "@example.com");
+        staff.setPassword("encoded-password");
+        staff.setRole(role);
+        return staffAccounts.saveAndFlush(staff);
     }
 
     private void saveVideo(User creator, String title) {

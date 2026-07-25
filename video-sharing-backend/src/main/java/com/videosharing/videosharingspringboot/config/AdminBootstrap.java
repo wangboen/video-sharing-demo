@@ -1,8 +1,8 @@
 package com.videosharing.videosharingspringboot.config;
 
 import com.videosharing.videosharingspringboot.model.Role;
-import com.videosharing.videosharingspringboot.model.User;
-import com.videosharing.videosharingspringboot.repository.UserRepository;
+import com.videosharing.videosharingspringboot.model.StaffAccount;
+import com.videosharing.videosharingspringboot.repository.StaffAccountRepository;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -16,19 +16,19 @@ import org.springframework.transaction.annotation.Transactional;
 public class AdminBootstrap implements CommandLineRunner {
     private static final Logger log = LoggerFactory.getLogger(AdminBootstrap.class);
 
-    private final UserRepository users;
+    private final StaffAccountRepository staffAccounts;
     private final PasswordEncoder encoder;
     private final String username;
     private final String email;
     private final String password;
 
     @Autowired
-    public AdminBootstrap(UserRepository users,
+    public AdminBootstrap(StaffAccountRepository staffAccounts,
                           PasswordEncoder encoder,
                           @Value("${ADMIN_USERNAME:}") String username,
                           @Value("${ADMIN_EMAIL:}") String email,
                           @Value("${ADMIN_PASSWORD:}") String password) {
-        this.users = users;
+        this.staffAccounts = staffAccounts;
         this.encoder = encoder;
         this.username = username == null ? "" : username.trim();
         this.email = email == null ? "" : email.trim().toLowerCase();
@@ -51,7 +51,7 @@ public class AdminBootstrap implements CommandLineRunner {
         }
         validate();
 
-        var existing = users.findByUsername(username);
+        var existing = staffAccounts.findByUsername(username);
         if (existing.isPresent()) {
             if (existing.get().getRole() != Role.ADMIN) {
                 throw new IllegalStateException("ADMIN_USERNAME collides with a non-admin account");
@@ -59,16 +59,16 @@ public class AdminBootstrap implements CommandLineRunner {
             log.info("Initial admin account already exists; leaving it unchanged");
             return;
         }
-        if (users.existsByEmail(email)) {
+        if (staffAccounts.existsByEmail(email)) {
             throw new IllegalStateException("ADMIN_EMAIL is already used by another account");
         }
 
-        User admin = new User();
+        StaffAccount admin = new StaffAccount();
         admin.setUsername(username);
         admin.setEmail(email);
         admin.setPassword(encoder.encode(password));
         admin.setRole(Role.ADMIN);
-        users.save(admin);
+        staffAccounts.save(admin);
         log.info("Created initial admin account '{}'", username);
     }
 

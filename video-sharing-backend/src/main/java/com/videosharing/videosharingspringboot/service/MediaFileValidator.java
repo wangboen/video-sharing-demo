@@ -22,7 +22,6 @@ import java.util.Locale;
 import java.util.Set;
 
 final class MediaFileValidator {
-    private static final long MAX_MEDIA_BYTES = 32L * 1024 * 1024;
     private static final long MAX_IMAGE_PIXELS = 25_000_000L;
     private static final int MAX_MP4_BOXES = 1024;
     private static final int COPY_BUFFER_SIZE = 16 * 1024;
@@ -34,12 +33,15 @@ final class MediaFileValidator {
         if (file == null || file.isEmpty()) {
             throw invalid("Uploaded media file must not be empty.");
         }
+        if (file.getSize() > kind.maxBytes()) {
+            throw invalid("Uploaded media exceeds the " + kind.limitLabel() + " limit.");
+        }
         Files.createDirectories(directory);
         Path staged = Files.createTempFile(directory, ".upload-", ".tmp");
         try {
             try (InputStream input = file.getInputStream();
                  OutputStream output = Files.newOutputStream(staged, StandardOpenOption.TRUNCATE_EXISTING)) {
-                copyAndScan(input, output);
+                copyAndScan(input, output, kind);
             }
             MediaFormat format = detectStructure(staged, kind);
             validateMetadata(file, format);
@@ -55,7 +57,7 @@ final class MediaFileValidator {
             throw invalid("Pending media is missing or not a regular file.");
         }
         try (InputStream input = Files.newInputStream(file)) {
-            scan(input);
+            scan(input, kind);
         }
         return detectStructure(file, kind);
     }
@@ -64,15 +66,15 @@ final class MediaFileValidator {
         Files.move(source, target, StandardCopyOption.ATOMIC_MOVE);
     }
 
-    private static void copyAndScan(InputStream input, OutputStream output) throws IOException {
+    private static void copyAndScan(InputStream input, OutputStream output, MediaKind kind) throws IOException {
         ActiveContentScanner scanner = new ActiveContentScanner();
         byte[] buffer = new byte[COPY_BUFFER_SIZE];
         long total = 0;
         int count;
         while ((count = input.read(buffer)) != -1) {
             total += count;
-            if (total > MAX_MEDIA_BYTES) {
-                throw invalid("Uploaded media exceeds the 32 MB limit.");
+            if (total > kind.maxBytes()) {
+                throw invalid("Uploaded media exceeds the " + kind.limitLabel() + " limit.");
             }
             scanner.accept(buffer, count);
             output.write(buffer, 0, count);
@@ -82,15 +84,15 @@ final class MediaFileValidator {
         }
     }
 
-    private static void scan(InputStream input) throws IOException {
+    private static void scan(InputStream input, MediaKind kind) throws IOException {
         ActiveContentScanner scanner = new ActiveContentScanner();
         byte[] buffer = new byte[COPY_BUFFER_SIZE];
         long total = 0;
         int count;
         while ((count = input.read(buffer)) != -1) {
             total += count;
-            if (total > MAX_MEDIA_BYTES) {
-                throw invalid("Pending media exceeds the 32 MB limit.");
+            if (total > kind.maxBytes()) {
+                throw invalid("Pending media exceeds the " + kind.limitLabel() + " limit.");
             }
             scanner.accept(buffer, count);
         }
@@ -484,8 +486,24 @@ final class MediaFileValidator {
     }
 
     enum MediaKind {
-        VIDEO,
-        THUMBNAIL
+        VIDEO(512L * 1024 * 1024, "512 MB"),
+        THUMBNAIL(32L * 1024 * 1024, "32 MB");
+
+        private final long maxBytes;
+        private final String limitLabel;
+
+        MediaKind(long maxBytes, String limitLabel) {
+            this.maxBytes = maxBytes;
+            this.limitLabel = limitLabel;
+        }
+
+        long maxBytes() {
+            return maxBytes;
+        }
+
+        String limitLabel() {
+            return limitLabel;
+        }
     }
 
     enum MediaFormat {

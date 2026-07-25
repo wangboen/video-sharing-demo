@@ -2,7 +2,7 @@ package com.videosharing.videosharingspringboot.controller;
 
 import com.videosharing.videosharingspringboot.dto.RegisterRequest;
 import com.videosharing.videosharingspringboot.dto.ReviewerResponse;
-import com.videosharing.videosharingspringboot.service.UserService;
+import com.videosharing.videosharingspringboot.service.StaffAccountService;
 import jakarta.validation.Valid;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -17,17 +17,17 @@ import java.util.List;
 @RestController
 @RequestMapping("/api/admin/reviewers")
 public class AdminReviewerController {
-    private final UserService users;
+    private final StaffAccountService staffAccounts;
 
-    public AdminReviewerController(UserService users) {
-        this.users = users;
+    public AdminReviewerController(StaffAccountService staffAccounts) {
+        this.staffAccounts = staffAccounts;
     }
 
     @PostMapping
     public ResponseEntity<?> create(@Valid @RequestBody RegisterRequest request) {
         try {
             return ResponseEntity.status(HttpStatus.CREATED).body(ReviewerResponse.from(
-                    users.createReviewer(request.getUsername(), request.getEmail(), request.getPassword())));
+                    staffAccounts.createReviewer(request.getUsername(), request.getEmail(), request.getPassword())));
         } catch (RuntimeException exception) {
             return ResponseEntity.badRequest().body(exception.getMessage());
         }
@@ -35,6 +35,6 @@ public class AdminReviewerController {
 
     @GetMapping
     public List<ReviewerResponse> list() {
-        return users.listReviewers().stream().map(ReviewerResponse::from).toList();
+        return staffAccounts.listReviewers().stream().map(ReviewerResponse::from).toList();
     }
 }

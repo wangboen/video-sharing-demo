@@ -3,6 +3,7 @@ package com.videosharing.videosharingspringboot.controller;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.videosharing.videosharingspringboot.model.Role;
+import com.videosharing.videosharingspringboot.model.StaffAccount;
 import com.videosharing.videosharingspringboot.model.User;
 import com.videosharing.videosharingspringboot.model.Video;
 import com.videosharing.videosharingspringboot.model.VideoStatus;
@@ -75,17 +76,6 @@ class VideoControllerSafeResponseTest {
     }
 
     @Test
-    void publicDetailExposesApprovedMediaUrlsWithoutEntityInternals() {
-        Video approved = video(VideoStatus.APPROVED);
-        when(videos.getVideoById(10L)).thenReturn(Optional.of(approved));
-
-        JsonNode body = json.valueToTree(controller.getVideoById(10L).getBody());
-
-        assertEquals("/uploads/video.mp4", body.get("videoUrl").asText());
-        assertSafe(body);
-    }
-
-    @Test
     void publicResponseRefusesToCreateMediaUrlsForPendingVideo() {
         when(videos.getAllVideos()).thenReturn(List.of(video(VideoStatus.PENDING)));
         assertThrows(IllegalArgumentException.class, controller::getAllVideos);
@@ -105,11 +95,11 @@ class VideoControllerSafeResponseTest {
         return video;
     }
 
-    private User staff() {
-        User user = new User();
-        user.setUsername("reviewer");
-        user.setRole(Role.REVIEWER);
-        return user;
+    private StaffAccount staff() {
+        StaffAccount staff = new StaffAccount();
+        staff.setUsername("reviewer");
+        staff.setRole(Role.REVIEWER);
+        return staff;
     }
 
     private void assertSafe(JsonNode body) {

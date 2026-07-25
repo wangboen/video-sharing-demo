@@ -2,10 +2,11 @@ package com.videosharing.videosharingspringboot.service;
 
 import com.videosharing.videosharingspringboot.dto.ModerationDecisionRequest;
 import com.videosharing.videosharingspringboot.model.Role;
+import com.videosharing.videosharingspringboot.model.StaffAccount;
 import com.videosharing.videosharingspringboot.model.User;
 import com.videosharing.videosharingspringboot.model.Video;
 import com.videosharing.videosharingspringboot.model.VideoStatus;
-import com.videosharing.videosharingspringboot.repository.UserRepository;
+import com.videosharing.videosharingspringboot.repository.StaffAccountRepository;
 import com.videosharing.videosharingspringboot.repository.VideoRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -32,19 +33,19 @@ import static org.mockito.Mockito.*;
 @ExtendWith(MockitoExtension.class)
 class ModerationServiceTest {
     @Mock VideoRepository videos;
-    @Mock UserRepository users;
+    @Mock StaffAccountRepository staffAccounts;
     @TempDir Path temp;
     private ModerationService service;
-    private User reviewer;
-    private User other;
+    private StaffAccount reviewer;
+    private StaffAccount other;
     private final Instant now = Instant.parse("2026-07-24T12:00:00Z");
 
     @BeforeEach
     void setUp() {
-        reviewer = user(1L, "reviewer", Role.REVIEWER);
-        other = user(2L, "other", Role.REVIEWER);
+        reviewer = staff(1L, "reviewer", Role.REVIEWER);
+        other = staff(2L, "other", Role.REVIEWER);
         Clock clock = Clock.fixed(now, ZoneOffset.UTC);
-        service = new ModerationService(videos, users, temp.resolve("pending-videos"),
+        service = new ModerationService(videos, staffAccounts, temp.resolve("pending-videos"),
                 temp.resolve("pending-thumbnails"), temp.resolve("public-videos"),
                 temp.resolve("public-thumbnails"), Duration.ofMinutes(15), clock);
     }
@@ -54,7 +55,7 @@ class ModerationServiceTest {
         Video leased = pending(10L);
         leased.setLeaseOwner(reviewer);
         leased.setLeaseExpiresAt(now.plusSeconds(60));
-        when(users.findByUsernameForUpdate("reviewer")).thenReturn(Optional.of(reviewer));
+        when(staffAccounts.findByUsernameForUpdate("reviewer")).thenReturn(Optional.of(reviewer));
         when(videos.findActiveLeaseForOwner(1L, VideoStatus.PENDING, now)).thenReturn(Optional.of(leased));
 
         assertEquals(10L, service.claimNext("reviewer").orElseThrow().id());
@@ -64,7 +65,7 @@ class ModerationServiceTest {
     @Test
     void leaseDurationMustBeLongerThanTheFixedSixtySecondHeartbeat() {
         IllegalArgumentException failure = assertThrows(IllegalArgumentException.class,
-                () -> new ModerationService(videos, users, temp.resolve("pending-videos"),
+                () -> new ModerationService(videos, staffAccounts, temp.resolve("pending-videos"),
                         temp.resolve("pending-thumbnails"), temp.resolve("public-videos"),
                         temp.resolve("public-thumbnails"), Duration.ofSeconds(60),
                         Clock.fixed(now, ZoneOffset.UTC)));
@@ -75,7 +76,7 @@ class ModerationServiceTest {
     @Test
     void claimUsesOldestAvailablePendingVideo() {
         Video oldest = pending(10L);
-        when(users.findByUsernameForUpdate("reviewer")).thenReturn(Optional.of(reviewer));
+        when(staffAccounts.findByUsernameForUpdate("reviewer")).thenReturn(Optional.of(reviewer));
         when(videos.findActiveLeaseForOwner(1L, VideoStatus.PENDING, now)).thenReturn(Optional.empty());
         when(videos.findClaimableForUpdate(VideoStatus.PENDING, now, PageRequest.of(0, 1)))
                 .thenReturn(List.of(oldest));
@@ -205,7 +206,7 @@ class ModerationServiceTest {
         Video leased = pending(10L);
         leased.setLeaseOwner(other);
         leased.setLeaseExpiresAt(now.minusSeconds(1));
-        when(users.findByUsernameForUpdate("reviewer")).thenReturn(Optional.of(reviewer));
+        when(staffAccounts.findByUsernameForUpdate("reviewer")).thenReturn(Optional.of(reviewer));
         when(videos.findActiveLeaseForOwner(1L, VideoStatus.PENDING, now)).thenReturn(Optional.empty());
         when(videos.findClaimableForUpdate(VideoStatus.PENDING, now, PageRequest.of(0, 1)))
                 .thenReturn(List.of(leased));
@@ -390,6 +391,14 @@ class ModerationServiceTest {
         user.setUsername(username);
         user.setRole(role);
         return user;
+    }
+
+    private StaffAccount staff(long id, String username, Role role) {
+        StaffAccount staff = new StaffAccount();
+        staff.setId(id);
+        staff.setUsername(username);
+        staff.setRole(role);
+        return staff;
     }
 
     private ModerationDecisionRequest decision(String decision, String reason, long version) {
