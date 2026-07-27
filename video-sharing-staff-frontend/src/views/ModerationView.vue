@@ -33,13 +33,7 @@ function setMessage(copy, kind = 'status') {
   messageKind.value = kind
 }
 
-function revokeUrl(url) {
-  if (url) URL.revokeObjectURL(url)
-}
-
 function clearMedia() {
-  revokeUrl(videoUrl.value)
-  revokeUrl(thumbnailUrl.value)
   videoUrl.value = ''
   thumbnailUrl.value = ''
 }
@@ -63,32 +57,6 @@ function clearTask(expectedToken = currentLeaseToken) {
   task.value = null
   rejectReason.value = ''
   return true
-}
-
-async function loadMedia(activeTask, leaseToken) {
-  try {
-    const videoResponse = await api.get(
-      `/api/moderation/videos/${activeTask.id}/preview/video`,
-      { responseType: 'blob' },
-    )
-    if (!isCurrentLease(leaseToken)) return
-    revokeUrl(videoUrl.value)
-    videoUrl.value = URL.createObjectURL(videoResponse.data)
-
-    if (activeTask.hasThumbnail) {
-      const thumbnailResponse = await api.get(
-        `/api/moderation/videos/${activeTask.id}/preview/thumbnail`,
-        { responseType: 'blob' },
-      )
-      if (!isCurrentLease(leaseToken)) return
-      revokeUrl(thumbnailUrl.value)
-      thumbnailUrl.value = URL.createObjectURL(thumbnailResponse.data)
-    }
-  } catch {
-    if (isCurrentLease(leaseToken)) {
-      setMessage('媒体预览加载失败，可保留任务后重试或释放任务。', 'error')
-    }
-  }
 }
 
 function heartbeat(leaseToken = currentLeaseToken) {
@@ -139,10 +107,11 @@ async function applyTask(nextTask) {
   const leaseToken = { videoId: nextTask.id }
   currentLeaseToken = leaseToken
   task.value = nextTask
+  videoUrl.value = nextTask.videoUrl || ''
+  thumbnailUrl.value = nextTask.thumbnailUrl || ''
   emptyQueue.value = false
   setMessage('任务已领取，请在租约时间内完成审核。')
   startHeartbeat(leaseToken)
-  await loadMedia(nextTask, leaseToken)
 }
 
 async function claimNext() {

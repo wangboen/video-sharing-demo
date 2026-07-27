@@ -50,7 +50,7 @@ class ModerationTimestampContractTest {
         Object expires = timestamp(claimedType, "2026-07-24T00:15:00Z");
         return constructor.newInstance(42L, "Title", "Description", "creator",
                 LocalDateTime.of(2026, 7, 23, 10, 0), VideoStatus.PENDING, 4L,
-                claimed, expires, true);
+                claimed, expires, true, "http://minio.local/video.mp4", "http://minio.local/cover.png");
     }
 
     private Object timestamp(Class<?> type, String value) {

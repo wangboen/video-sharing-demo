@@ -32,11 +32,6 @@ async function loadVideos() {
   loading.value = true
   error.value = ''
   try {
-
-    // 在 main.ts 或 App.vue 中
-    console.log('当前 API Base URL:', import.meta.env.VITE_API_BASE_URL);
-    console.log('所有环境变量:', import.meta.env); // 查看全部
-
     const response = await api.get('/api/videos')
     videos.value = Array.isArray(response.data) ? response.data : []
   } catch {

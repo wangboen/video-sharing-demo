@@ -12,14 +12,12 @@ import com.videosharing.videosharingspringboot.repository.UserRepository;
 import com.videosharing.videosharingspringboot.repository.VideoRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.io.TempDir;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.orm.jpa.DataJpaTest;
 import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.support.TransactionTemplate;
 
-import java.nio.file.Path;
 import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
@@ -38,7 +36,6 @@ class ModerationConcurrencyTest {
     @Autowired UserRepository users;
     @Autowired StaffAccountRepository staffAccounts;
     @Autowired TransactionTemplate transactions;
-    @TempDir Path temp;
     private ModerationService moderation;
 
     @BeforeEach
@@ -46,10 +43,7 @@ class ModerationConcurrencyTest {
         videos.deleteAll();
         staffAccounts.deleteAll();
         users.deleteAll();
-        moderation = new ModerationService(videos, staffAccounts,
-                temp.resolve("pending-videos"), temp.resolve("pending-thumbnails"),
-                temp.resolve("public-videos"), temp.resolve("public-thumbnails"),
-                Duration.ofMinutes(15),
+        moderation = new ModerationService(videos, staffAccounts, Duration.ofMinutes(15),
                 Clock.fixed(Instant.parse("2026-07-24T04:00:00Z"), ZoneOffset.UTC));
     }
 

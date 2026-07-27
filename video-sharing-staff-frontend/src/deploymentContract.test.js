@@ -23,19 +23,11 @@ describe('same-origin Nginx deployment contract', () => {
     expect(nginx).toMatch(/location\s+\/\s*\{[\s\S]*?try_files\s+\$uri\s+\$uri\/\s+\/index\.html;/)
   })
 
-  it('proxies API calls and exposes only the approved public media directories', () => {
+  it('proxies API calls and leaves public media delivery to object storage', () => {
     expect(nginx).toMatch(/location\s+\/api\/\s*\{[\s\S]*?proxy_pass\s+http:\/\/127\.0\.0\.1:8080/)
-    expect(nginx).toMatch(/location\s+\/uploads\/\s*\{[\s\S]*?alias\s+\/srv\/video-sharing\/public\/uploads\//)
-    expect(nginx).toMatch(/location\s+\/thumbnails\/\s*\{[\s\S]*?alias\s+\/srv\/video-sharing\/public\/thumbnails\//)
-    expect(nginx).toContain('add_header Accept-Ranges bytes')
-  })
-
-  it('adds nosniff to every approved public media response', () => {
-    const uploadsBlock = nginx.match(/location\s+\/uploads\/\s*\{([\s\S]*?)\}/)
-    const thumbnailsBlock = nginx.match(/location\s+\/thumbnails\/\s*\{([\s\S]*?)\}/)
-
-    expect(uploadsBlock?.[1]).toMatch(/add_header\s+X-Content-Type-Options\s+nosniff\s+always;/)
-    expect(thumbnailsBlock?.[1]).toMatch(/add_header\s+X-Content-Type-Options\s+nosniff\s+always;/)
+    expect(nginx).not.toMatch(/location\s+\/uploads\//)
+    expect(nginx).not.toMatch(/location\s+\/thumbnails\//)
+    expect(nginx).not.toMatch(/alias\s+\/srv\/video-sharing\/public\/(?:uploads|thumbnails)\//)
   })
 
   it('binds only to a loopback non-public port behind the mandatory TLS terminator', () => {
@@ -57,17 +49,23 @@ describe('same-origin Nginx deployment contract', () => {
     expect(pendingBlock?.[1]).not.toMatch(/\balias\b/)
   })
 
-  it('keeps public and pending media directories configurable by environment', () => {
-    expect(applicationProperties).toMatch(/^file\.upload-dir=\$\{FILE_UPLOAD_DIR:/m)
-    expect(applicationProperties).toMatch(/^file\.thumbnail-dir=\$\{FILE_THUMBNAIL_DIR:/m)
-    expect(applicationProperties).toMatch(/^file\.pending-upload-dir=\$\{PENDING_UPLOAD_DIR:/m)
-    expect(applicationProperties).toMatch(/^file\.pending-thumbnail-dir=\$\{PENDING_THUMBNAIL_DIR:/m)
+  it('does not configure legacy filesystem media directories', () => {
+    expect(applicationProperties).not.toMatch(/^file\.(?:upload-dir|thumbnail-dir|pending-upload-dir|pending-thumbnail-dir)=/m)
   })
 
-  it('permits a 512MB video plus a 32MB thumbnail without widening thumbnail validation', () => {
-    expect(applicationProperties).toMatch(/^spring\.servlet\.multipart\.max-file-size=512MB$/m)
-    expect(applicationProperties).toMatch(/^spring\.servlet\.multipart\.max-request-size=545MB$/m)
-    expect(nginx).toMatch(/client_max_body_size\s+545m;/)
+  it('does not retain legacy backend multipart media upload limits', () => {
+    expect(applicationProperties).not.toMatch(/^spring\.servlet\.multipart\.(?:max-file-size|max-request-size)=/m)
+    expect(nginx).not.toMatch(/client_max_body_size\s+545m;/)
+  })
+
+  it('configures MinIO compatible object storage for direct media uploads', () => {
+    expect(applicationProperties).toMatch(/^object-storage\.endpoint=\$\{OBJECT_STORAGE_ENDPOINT:/m)
+    expect(applicationProperties).toMatch(/^object-storage\.bucket=\$\{OBJECT_STORAGE_BUCKET:/m)
+    expect(applicationProperties).toMatch(/^object-storage\.access-key=\$\{OBJECT_STORAGE_ACCESS_KEY:/m)
+    expect(applicationProperties).toMatch(/^object-storage\.secret-key=\$\{OBJECT_STORAGE_SECRET_KEY:/m)
+    expect(applicationProperties).toMatch(/^object-storage\.public-base-url=\$\{OBJECT_STORAGE_PUBLIC_BASE_URL:/m)
+    expect(applicationProperties).toMatch(/^object-storage\.pending-prefix=\$\{OBJECT_STORAGE_PENDING_PREFIX:pending\/\}/m)
+    expect(applicationProperties).toMatch(/^object-storage\.public-prefix=\$\{OBJECT_STORAGE_PUBLIC_PREFIX:public\/\}/m)
   })
 
   it('requires JWT_SECRET by default and confines the development secret to the dev profile', () => {
@@ -90,10 +88,11 @@ describe('same-origin Nginx deployment contract', () => {
     expect(deploymentGuide).toContain('DB_PASSWORD')
   })
 
-  it('documents media paths that match the Nginx public mounts and keep pending files private', () => {
-    expect(deploymentGuide).toContain('FILE_UPLOAD_DIR=/srv/video-sharing/public/uploads')
-    expect(deploymentGuide).toContain('FILE_THUMBNAIL_DIR=/srv/video-sharing/public/thumbnails')
-    expect(deploymentGuide).toContain('PENDING_UPLOAD_DIR=/srv/video-sharing/private/pending/uploads')
-    expect(deploymentGuide).toContain('PENDING_THUMBNAIL_DIR=/srv/video-sharing/private/pending/thumbnails')
+  it('documents object storage instead of legacy filesystem media paths', () => {
+    expect(deploymentGuide).toContain('OBJECT_STORAGE_ENDPOINT')
+    expect(deploymentGuide).toContain('OBJECT_STORAGE_BUCKET')
+    expect(deploymentGuide).toContain('OBJECT_STORAGE_PUBLIC_BASE_URL')
+    expect(deploymentGuide).not.toContain('FILE_UPLOAD_DIR=/srv/video-sharing/public/uploads')
+    expect(deploymentGuide).not.toContain('PENDING_UPLOAD_DIR=/srv/video-sharing/private/pending/uploads')
   })
 })

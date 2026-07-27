@@ -50,6 +50,12 @@ public class Video {
     @Column(name = "rejection_reason", length = 500)
     private String rejectionReason;
 
+    @Column(name = "file_deleted_at")
+    private Instant fileDeletedAt;
+
+    @Column(name = "thumbnail_deleted_at")
+    private Instant thumbnailDeletedAt;
+
     @Version
     @Column(nullable = false)
     private Long version;

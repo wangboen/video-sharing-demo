@@ -1,7 +1,5 @@
 package com.videosharing.videosharingspringboot.service;
 
-import org.springframework.web.multipart.MultipartFile;
-
 import javax.imageio.ImageIO;
 import javax.imageio.ImageReader;
 import javax.imageio.stream.ImageInputStream;
@@ -29,22 +27,23 @@ final class MediaFileValidator {
     private MediaFileValidator() {
     }
 
-    static StagedMedia stage(MultipartFile file, Path directory, MediaKind kind) throws IOException {
-        if (file == null || file.isEmpty()) {
+    static StagedMedia stageObject(InputStream input, long contentLength, String originalFilename,
+                                   String contentType, Path directory, MediaKind kind) throws IOException {
+        if (input == null || contentLength <= 0) {
             throw invalid("Uploaded media file must not be empty.");
         }
-        if (file.getSize() > kind.maxBytes()) {
+        if (contentLength > kind.maxBytes()) {
             throw invalid("Uploaded media exceeds the " + kind.limitLabel() + " limit.");
         }
         Files.createDirectories(directory);
-        Path staged = Files.createTempFile(directory, ".upload-", ".tmp");
+        Path staged = Files.createTempFile(directory, ".object-", ".tmp");
         try {
-            try (InputStream input = file.getInputStream();
+            try (InputStream source = input;
                  OutputStream output = Files.newOutputStream(staged, StandardOpenOption.TRUNCATE_EXISTING)) {
-                copyAndScan(input, output, kind);
+                copyAndScan(source, output, kind);
             }
             MediaFormat format = detectStructure(staged, kind);
-            validateMetadata(file, format);
+            validateMetadata(originalFilename, contentType, format);
             return new StagedMedia(staged, format);
         } catch (IOException | RuntimeException exception) {
             delete(staged, exception);
@@ -395,8 +394,7 @@ final class MediaFileValidator {
         return new VariableInteger(length, value);
     }
 
-    private static void validateMetadata(MultipartFile file, MediaFormat format) {
-        String contentType = file.getContentType();
+    private static void validateMetadata(String originalFilename, String contentType, MediaFormat format) {
         String normalizedType = contentType == null
                 ? ""
                 : contentType.split(";", 2)[0].trim().toLowerCase(Locale.ROOT);
@@ -404,7 +402,7 @@ final class MediaFileValidator {
             throw invalid("Uploaded media MIME type does not match its content.");
         }
 
-        String original = file.getOriginalFilename();
+        String original = originalFilename;
         String normalizedName = original == null ? "" : original.replace('\\', '/').toLowerCase(Locale.ROOT);
         String baseName = normalizedName.substring(normalizedName.lastIndexOf('/') + 1);
         if (format.sourceExtensions().stream().noneMatch(baseName::endsWith)) {
@@ -561,6 +559,8 @@ final class MediaFileValidator {
 
         private final byte[] window = new byte[WINDOW_SIZE];
         private final byte[] prefix = new byte[4];
+        private boolean activeContentCandidate = true;
+        private boolean sawFirstNonWhitespace;
         private long position;
         private int cursor;
         private int windowCount;
@@ -579,9 +579,21 @@ final class MediaFileValidator {
             if (normalized >= 'A' && normalized <= 'Z') {
                 normalized = (byte) (normalized + ('a' - 'A'));
             }
-            window[cursor] = normalized;
-            cursor = (cursor + 1) % WINDOW_SIZE;
-            windowCount = Math.min(WINDOW_SIZE, windowCount + 1);
+            if (activeContentCandidate) {
+                if (!sawFirstNonWhitespace && isAsciiWhitespace(normalized)) {
+                    position++;
+                    return;
+                }
+                if (!sawFirstNonWhitespace) {
+                    sawFirstNonWhitespace = true;
+                    activeContentCandidate = normalized == '<' || normalized == 'j';
+                }
+                if (activeContentCandidate) {
+                    window[cursor] = normalized;
+                    cursor = (cursor + 1) % WINDOW_SIZE;
+                    windowCount = Math.min(WINDOW_SIZE, windowCount + 1);
+                }
+            }
             position++;
 
             if (position == 2 && ((prefix[0] == 'M' && prefix[1] == 'Z')
@@ -592,11 +604,18 @@ final class MediaFileValidator {
                     && prefix[2] == 'L' && prefix[3] == 'F') {
                 throw invalid("Executable media content is not allowed.");
             }
+            if (!activeContentCandidate) {
+                return;
+            }
             for (byte[] marker : MARKERS) {
                 if (endsWith(marker)) {
                     throw invalid("Active or polyglot media content is not allowed.");
                 }
             }
+        }
+
+        private static boolean isAsciiWhitespace(byte value) {
+            return value == ' ' || value == '\n' || value == '\r' || value == '\t' || value == '\f';
         }
 
         private boolean endsWith(byte[] marker) {

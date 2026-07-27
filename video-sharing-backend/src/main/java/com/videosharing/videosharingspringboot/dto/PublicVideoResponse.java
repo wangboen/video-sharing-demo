@@ -18,16 +18,30 @@ public record PublicVideoResponse(
         Long views
 ) {
     public static PublicVideoResponse from(Video video) {
+        return from(video, "");
+    }
+
+    public static PublicVideoResponse from(Video video, String objectStoragePublicBaseUrl) {
         if (video.getStatus() != VideoStatus.APPROVED) {
             throw new IllegalArgumentException("Only approved videos may have public media URLs");
         }
         return new PublicVideoResponse(video.getId(), video.getTitle(), video.getDescription(),
-                video.getUser().getUsername(), publicUrl("/uploads/", video.getFilePath()),
-                video.getThumbnailPath() == null ? null : publicUrl("/thumbnails/", video.getThumbnailPath()),
+                video.getUser().getUsername(), publicVideoUrl(video.getFilePath(), objectStoragePublicBaseUrl),
+                video.getThumbnailPath() == null ? null : publicThumbnailUrl(video.getThumbnailPath(), objectStoragePublicBaseUrl),
                 video.getUploadDate(), video.getViews());
     }
 
-    private static String publicUrl(String prefix, String fileName) {
-        return prefix + UriUtils.encodePathSegment(fileName, StandardCharsets.UTF_8);
+    private static String publicVideoUrl(String fileName, String objectStoragePublicBaseUrl) {
+        return objectUrl(objectStoragePublicBaseUrl, fileName);
     }
+
+    private static String publicThumbnailUrl(String fileName, String objectStoragePublicBaseUrl) {
+        return objectUrl(objectStoragePublicBaseUrl, fileName);
+    }
+
+    private static String objectUrl(String baseUrl, String key) {
+        String trimmed = baseUrl == null ? "" : baseUrl.replaceAll("/+$", "");
+        return trimmed + "/" + UriUtils.encodePath(key, StandardCharsets.UTF_8);
+    }
+
 }

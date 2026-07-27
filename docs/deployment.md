@@ -41,10 +41,6 @@ TLS terminator or load balancer is mandatory. The Nginx listener on `127.0.0.1:8
 /srv/video-sharing/
   user/dist/                    # 普通用户前端构建产物
   staff/dist/                   # 审核端前端构建产物
-  public/uploads/               # 已通过审核的公开视频文件
-  public/thumbnails/            # 已通过审核的公开缩略图
-  private/pending/uploads/      # 待审核视频文件，不允许被 Nginx 暴露
-  private/pending/thumbnails/   # 待审核缩略图，不允许被 Nginx 暴露
 ```
 
 创建目录并设置运行用户权限：
@@ -52,10 +48,6 @@ TLS terminator or load balancer is mandatory. The Nginx listener on `127.0.0.1:8
 ```bash
 sudo mkdir -p /srv/video-sharing/user/dist
 sudo mkdir -p /srv/video-sharing/staff/dist
-sudo mkdir -p /srv/video-sharing/public/uploads
-sudo mkdir -p /srv/video-sharing/public/thumbnails
-sudo mkdir -p /srv/video-sharing/private/pending/uploads
-sudo mkdir -p /srv/video-sharing/private/pending/thumbnails
 sudo chown -R app:app /srv/video-sharing
 ```
 
@@ -79,10 +71,11 @@ sudo chown -R app:app /srv/video-sharing
 | `REDIS_PORT` | `6379` | Redis 端口 |
 | `REDIS_PASSWORD` | `********` | Redis 密码；本地无密码可留空 |
 | `REDIS_DATABASE` | `0` | Redis database |
-| `FILE_UPLOAD_DIR` | `/srv/video-sharing/public/uploads` | 公开视频目录 |
-| `FILE_THUMBNAIL_DIR` | `/srv/video-sharing/public/thumbnails` | 公开缩略图目录 |
-| `PENDING_UPLOAD_DIR` | `/srv/video-sharing/private/pending/uploads` | 待审核视频目录 |
-| `PENDING_THUMBNAIL_DIR` | `/srv/video-sharing/private/pending/thumbnails` | 待审核缩略图目录 |
+| `OBJECT_STORAGE_ENDPOINT` | `http://127.0.0.1:9000` | MinIO / S3 endpoint，用于后端签名、读取和审核复制 |
+| `OBJECT_STORAGE_BUCKET` | `video-sharing` | 视频和封面对象所在 bucket |
+| `OBJECT_STORAGE_ACCESS_KEY` | `********` | 对象存储 access key |
+| `OBJECT_STORAGE_SECRET_KEY` | `********` | 对象存储 secret key |
+| `OBJECT_STORAGE_PUBLIC_BASE_URL` | `https://media.example.com/video-sharing` | 公开视频和封面的公开访问基地址 |
 | `CORS_ALLOWED_ORIGINS` | `https://your-domain.example` | 跨域白名单；同源部署可保持严格配置 |
 | `MODERATION_LEASE_DURATION_MINUTES` | `15` | 审核任务租约时间，必须大于 2 分钟 |
 
@@ -177,23 +170,25 @@ export REDIS_HOST='127.0.0.1'
 export REDIS_PORT='6379'
 export REDIS_PASSWORD=''
 export REDIS_DATABASE='0'
-export FILE_UPLOAD_DIR='/srv/video-sharing/public/uploads'
-export FILE_THUMBNAIL_DIR='/srv/video-sharing/public/thumbnails'
-export PENDING_UPLOAD_DIR='/srv/video-sharing/private/pending/uploads'
-export PENDING_THUMBNAIL_DIR='/srv/video-sharing/private/pending/thumbnails'
+export OBJECT_STORAGE_ENDPOINT='http://127.0.0.1:9000'
+export OBJECT_STORAGE_BUCKET='video-sharing'
+export OBJECT_STORAGE_ACCESS_KEY='replace-with-access-key'
+export OBJECT_STORAGE_SECRET_KEY='replace-with-secret-key'
+export OBJECT_STORAGE_PUBLIC_BASE_URL='https://media.example.com/video-sharing'
 export CORS_ALLOWED_ORIGINS='https://your-domain.example'
 export MODERATION_LEASE_DURATION_MINUTES='15'
 
 java -jar target/videosharingspringboot-0.0.1-SNAPSHOT.jar
 ```
 
-Media path values without shell quoting:
+Object storage values without shell quoting:
 
 ```text
-FILE_UPLOAD_DIR=/srv/video-sharing/public/uploads
-FILE_THUMBNAIL_DIR=/srv/video-sharing/public/thumbnails
-PENDING_UPLOAD_DIR=/srv/video-sharing/private/pending/uploads
-PENDING_THUMBNAIL_DIR=/srv/video-sharing/private/pending/thumbnails
+OBJECT_STORAGE_ENDPOINT=http://127.0.0.1:9000
+OBJECT_STORAGE_BUCKET=video-sharing
+OBJECT_STORAGE_ACCESS_KEY=replace-with-access-key
+OBJECT_STORAGE_SECRET_KEY=replace-with-secret-key
+OBJECT_STORAGE_PUBLIC_BASE_URL=https://media.example.com/video-sharing
 ```
 
 本地开发可以使用 dev profile：
@@ -222,9 +217,8 @@ video-sharing-backend/src/main/resources/nginx.conf
 - `/` 托管普通用户前端。
 - `/staff/` 托管审核端前端。
 - `/api/` 代理到 `127.0.0.1:8080`。
-- `/uploads/` 和 `/thumbnails/` 直接返回公开视频与缩略图。
+- 公开视频与缩略图由对象存储公开地址返回，不再通过 Nginx 文件系统 alias 托管。
 - `/pending/` 永远返回 404，避免待审核文件被公开访问。
-- `client_max_body_size 545m` 与 Spring Boot 上传限制保持一致。
 
 安装配置示例：
 
@@ -256,14 +250,14 @@ sudo systemctl reload nginx
 - `POST /api/auth/login`
 - `POST /api/staff/auth/login`
 - `GET /api/videos`
-- `/uploads/**`
-- `/thumbnails/**`
 
 当前受保护接口：
 
 - `GET /api/auth/me`
 - `POST /api/auth/logout`
-- `POST /api/videos/upload`
+- `POST /api/videos/upload-session`
+- `POST /api/videos/upload-complete`
+- `POST /api/videos/upload-cancel`
 - `/api/moderation/**`
 - `/api/admin/**`
 - 用户个人中心相关接口
@@ -286,7 +280,7 @@ mvn test
 - `GET /api/auth/me` 携带有效 Bearer Token 返回当前用户。
 - 退出登录后，同一 token 再访问上传接口返回 401。
 - `GET /api/videos` 不需要 token。
-- `POST /api/videos/upload` 缺少 token 时返回 401。
+- `POST /api/videos/upload-session`、`POST /api/videos/upload-complete` 和 `POST /api/videos/upload-cancel` 缺少 token 时返回 401。
 
 ### 前端验收
 
@@ -308,7 +302,7 @@ npm run build
 - 退出登录会调用 `/api/auth/logout` 并清理本地登录态。
 - 未登录访问上传页或个人中心会跳转登录页。
 - 上传视频时只提交标题、描述、视频和缩略图，用户身份由 JWT 决定。
-- 公开视频和缩略图通过 Nginx 的 `/uploads/`、`/thumbnails/` 加载。
+- 公开视频和缩略图通过对象存储 `OBJECT_STORAGE_PUBLIC_BASE_URL` 加载。
 
 ### Nginx 与静态资源检查
 
@@ -336,25 +330,13 @@ curl -I https://your-domain.example/pending/
 
 生产同源部署通常不要设置 `VITE_API_BASE_URL`，让前端请求相对路径 `/api/`。如果构建时设置了绝对地址，修改 `.env` 后必须重新执行 `npm run build`。
 
-### 3. 上传视频返回 413
+### 3. 上传视频直传失败
 
-检查 Nginx `client_max_body_size` 是否为 `545m`，并确认 Spring Boot：
-
-```properties
-spring.servlet.multipart.max-file-size=512MB
-spring.servlet.multipart.max-request-size=545MB
-```
+确认 MinIO bucket 的 CORS 允许前端 origin 执行 `PUT`，并允许 `Content-Type` 请求头；同时确认后端返回的预签名 URL 使用浏览器可访问的 `OBJECT_STORAGE_ENDPOINT`。
 
 ### 4. 视频或缩略图 404
 
-确认后端环境变量和 Nginx alias 指向同一组公开目录：
-
-```text
-FILE_UPLOAD_DIR=/srv/video-sharing/public/uploads
-FILE_THUMBNAIL_DIR=/srv/video-sharing/public/thumbnails
-```
-
-同时确认待审核目录没有被 Nginx 暴露。
+确认对象已经从 `pending/` 复制到 `public/` 前缀，并且 `OBJECT_STORAGE_PUBLIC_BASE_URL` 指向公开视频 bucket 地址。
 
 ### 5. 初始管理员无法创建
 

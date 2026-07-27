@@ -4,17 +4,12 @@ import com.videosharing.videosharingspringboot.dto.ModerationDecisionRequest;
 import com.videosharing.videosharingspringboot.dto.ModerationDecisionResponse;
 import com.videosharing.videosharingspringboot.dto.ModerationVideoResponse;
 import com.videosharing.videosharingspringboot.model.Role;
-import com.videosharing.videosharingspringboot.service.ModerationPreview;
 import com.videosharing.videosharingspringboot.service.ModerationService;
 import com.videosharing.videosharingspringboot.service.StaffAccountService;
 import jakarta.validation.Valid;
-import org.springframework.core.io.Resource;
-import org.springframework.http.ContentDisposition;
-import org.springframework.http.HttpHeaders;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.DeleteMapping;
-import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -57,29 +52,10 @@ public class ModerationController {
         return ResponseEntity.noContent().build();
     }
 
-    @GetMapping("/{id}/preview/video")
-    public ResponseEntity<Resource> previewVideo(@PathVariable Long id, Authentication authentication) {
-        return preview(moderation.preview(id, authentication.getName(), false));
-    }
-
-    @GetMapping("/{id}/preview/thumbnail")
-    public ResponseEntity<Resource> previewThumbnail(@PathVariable Long id, Authentication authentication) {
-        return preview(moderation.preview(id, authentication.getName(), true));
-    }
-
     @PatchMapping("/{id}")
     public ModerationDecisionResponse decide(@PathVariable Long id,
                                              Authentication authentication,
                                              @Valid @RequestBody ModerationDecisionRequest request) {
         return moderation.decide(id, authentication.getName(), request);
-    }
-
-    private ResponseEntity<Resource> preview(ModerationPreview preview) {
-        return ResponseEntity.ok()
-                .contentType(preview.mediaType())
-                .header(HttpHeaders.CONTENT_DISPOSITION,
-                        ContentDisposition.inline().filename(preview.safeFilename()).build().toString())
-                .header("X-Content-Type-Options", "nosniff")
-                .body(preview.resource());
     }
 }

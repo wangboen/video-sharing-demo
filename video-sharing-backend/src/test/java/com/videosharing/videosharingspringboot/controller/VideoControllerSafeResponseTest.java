@@ -2,8 +2,12 @@ package com.videosharing.videosharingspringboot.controller;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.videosharing.videosharingspringboot.dto.CompleteUploadRequest;
+import com.videosharing.videosharingspringboot.dto.CreateUploadSessionRequest;
+import com.videosharing.videosharingspringboot.dto.UploadFileRequest;
+import com.videosharing.videosharingspringboot.dto.UploadSessionResponse;
+import com.videosharing.videosharingspringboot.dto.UploadTargetResponse;
 import com.videosharing.videosharingspringboot.model.Role;
-import com.videosharing.videosharingspringboot.model.StaffAccount;
 import com.videosharing.videosharingspringboot.model.User;
 import com.videosharing.videosharingspringboot.model.Video;
 import com.videosharing.videosharingspringboot.model.VideoStatus;
@@ -11,7 +15,6 @@ import com.videosharing.videosharingspringboot.service.UserService;
 import com.videosharing.videosharingspringboot.service.VideoService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
-import org.springframework.mock.web.MockMultipartFile;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.test.util.ReflectionTestUtils;
 
@@ -36,6 +39,7 @@ class VideoControllerSafeResponseTest {
         controller = new VideoController();
         ReflectionTestUtils.setField(controller, "videoService", videos);
         ReflectionTestUtils.setField(controller, "userService", users);
+        ReflectionTestUtils.setField(controller, "objectStoragePublicBaseUrl", "http://minio.local/video-sharing");
         creator = new User();
         creator.setId(7L);
         creator.setUsername("creator");
@@ -44,33 +48,16 @@ class VideoControllerSafeResponseTest {
     }
 
     @Test
-    void pendingUploadResponseContainsNoStorageOrModerationInternals() throws Exception {
-        Video pending = video(VideoStatus.PENDING);
-        pending.setLeaseOwner(staff());
-        pending.setLeaseExpiresAt(Instant.parse("2026-07-24T05:00:00Z"));
-        var authentication = new UsernamePasswordAuthenticationToken("creator", null);
-        var file = new MockMultipartFile("file", "video.mp4", "video/mp4", "video".getBytes());
-        when(users.findByUsername("creator")).thenReturn(Optional.of(creator));
-        when(videos.uploadVideo(creator, "Title", "Description", file, null)).thenReturn(pending);
-
-        JsonNode body = json.valueToTree(controller.uploadVideo(
-                authentication, "Title", "Description", file, null).getBody());
-
-        assertEquals("PENDING", body.get("status").asText());
-        assertSafe(body);
-        assertFalse(body.has("videoUrl"));
-        assertFalse(body.has("thumbnailUrl"));
-    }
-
-    @Test
     void publicListExposesApprovedMediaUrlsWithoutEntityInternals() {
         Video approved = video(VideoStatus.APPROVED);
+        approved.setFilePath("public/users/7/video/video.mp4");
+        approved.setThumbnailPath("public/users/7/thumbnail/thumb.png");
         when(videos.getAllVideos()).thenReturn(List.of(approved));
 
         JsonNode body = json.valueToTree(controller.getAllVideos().getBody()).get(0);
 
-        assertEquals("/uploads/video.mp4", body.get("videoUrl").asText());
-        assertEquals("/thumbnails/thumb.png", body.get("thumbnailUrl").asText());
+        assertEquals("http://minio.local/video-sharing/public/users/7/video/video.mp4", body.get("videoUrl").asText());
+        assertEquals("http://minio.local/video-sharing/public/users/7/thumbnail/thumb.png", body.get("thumbnailUrl").asText());
         assertEquals("creator", body.get("uploader").asText());
         assertSafe(body);
     }
@@ -95,11 +82,36 @@ class VideoControllerSafeResponseTest {
         return video;
     }
 
-    private StaffAccount staff() {
-        StaffAccount staff = new StaffAccount();
-        staff.setUsername("reviewer");
-        staff.setRole(Role.REVIEWER);
-        return staff;
+    @Test
+    void uploadSessionAndCompletionResponsesContainNoStorageInternalsBeyondObjectKeys() throws Exception {
+        var authentication = new UsernamePasswordAuthenticationToken("creator", null);
+        var sessionRequest = new CreateUploadSessionRequest("Title", "Description",
+                new UploadFileRequest("video.mp4", "video/mp4", 120L),
+                new UploadFileRequest("thumb.png", "image/png", 80L));
+        var session = new UploadSessionResponse("session-id",
+                new UploadTargetResponse("pending/users/7/session-id/video/video.mp4",
+                        "http://minio.local/upload-video", "video/mp4"),
+                new UploadTargetResponse("pending/users/7/session-id/thumbnail/thumb.png",
+                        "http://minio.local/upload-thumb", "image/png"),
+                Instant.parse("2026-07-24T05:00:00Z"));
+        Video pending = video(VideoStatus.PENDING);
+        pending.setFilePath(session.video().key());
+        pending.setThumbnailPath(session.thumbnail().key());
+        when(users.findByUsername("creator")).thenReturn(Optional.of(creator));
+        when(videos.createUploadSession(creator, sessionRequest)).thenReturn(session);
+        when(videos.completeDirectUpload(creator, new CompleteUploadRequest(
+                "session-id", session.video().key(), session.thumbnail().key(), "Title", "Description")))
+                .thenReturn(pending);
+
+        JsonNode sessionBody = json.valueToTree(controller.createUploadSession(authentication, sessionRequest).getBody());
+        JsonNode completeBody = json.valueToTree(controller.completeUpload(authentication, new CompleteUploadRequest(
+                "session-id", session.video().key(), session.thumbnail().key(), "Title", "Description")).getBody());
+
+        assertEquals("http://minio.local/upload-video", sessionBody.get("video").get("uploadUrl").asText());
+        assertEquals("PENDING", completeBody.get("status").asText());
+        assertSafe(completeBody);
+        assertFalse(completeBody.has("videoUrl"));
+        assertFalse(completeBody.has("thumbnailUrl"));
     }
 
     private void assertSafe(JsonNode body) {

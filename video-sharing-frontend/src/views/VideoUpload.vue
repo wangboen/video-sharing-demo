@@ -1,4 +1,5 @@
 <script setup>
+import axios from 'axios';
 import { onBeforeUnmount, ref } from 'vue';
 import api from '../services/api';
 import { friendlyApiError } from '../utils/apiError';
@@ -44,19 +45,43 @@ const handleUpload = async () => {
   }
 
   uploading.value = true;
+  let session = null;
   try {
-    const formData = new FormData();
-    formData.append('title', title.value);
-    formData.append('description', description.value);
-    formData.append('file', selectedFile.value);
-    if (selectedThumbnail.value) {
-      formData.append('thumbnail', selectedThumbnail.value);
-    }
-
-    await api.post('/api/videos/upload', formData, {
-      headers: {
-        'Content-Type': 'multipart/form-data',
+    const sessionResponse = await api.post('/api/videos/upload-session', {
+      title: title.value,
+      description: description.value,
+      video: {
+        fileName: selectedFile.value.name,
+        contentType: selectedFile.value.type,
+        size: selectedFile.value.size,
       },
+      thumbnail: selectedThumbnail.value
+        ? {
+            fileName: selectedThumbnail.value.name,
+            contentType: selectedThumbnail.value.type,
+            size: selectedThumbnail.value.size,
+          }
+        : null,
+    });
+    session = sessionResponse.data;
+    await axios.put(session.video.uploadUrl, selectedFile.value, {
+      headers: {
+        'Content-Type': session.video.contentType,
+      },
+    });
+    if (selectedThumbnail.value && session.thumbnail) {
+      await axios.put(session.thumbnail.uploadUrl, selectedThumbnail.value, {
+        headers: {
+          'Content-Type': session.thumbnail.contentType,
+        },
+      });
+    }
+    await api.post('/api/videos/upload-complete', {
+      uploadSessionId: session.uploadSessionId,
+      videoKey: session.video.key,
+      thumbnailKey: session.thumbnail?.key ?? null,
+      title: title.value,
+      description: description.value,
     });
 
     successMessage.value = '视频已提交审核';
@@ -68,6 +93,17 @@ const handleUpload = async () => {
     if (videoInput.value) videoInput.value.value = '';
     if (thumbnailInput.value) thumbnailInput.value.value = '';
   } catch (err) {
+    if (session?.uploadSessionId && session?.video?.key) {
+      try {
+        await api.post('/api/videos/upload-cancel', {
+          uploadSessionId: session.uploadSessionId,
+          videoKey: session.video.key,
+          thumbnailKey: session.thumbnail?.key ?? null,
+        });
+      } catch {
+        // Keep the original upload failure visible; cleanup failures are best-effort here.
+      }
+    }
     error.value = friendlyApiError(err, '视频发布失败，请稍后重试。');
   } finally {
     uploading.value = false;
@@ -96,10 +132,21 @@ onBeforeUnmount(revokeThumbnailPreview);
         <h2 id="upload-form-title">填写发布信息</h2>
       </div>
       <form @submit.prevent="handleUpload">
-        <div class="form-field form-field--wide">
-          <label for="file">选择视频文件</label>
-          <input id="file" ref="videoInput" type="file" accept="video/*" required @change="handleFileChange" />
-          <span>{{ selectedFile ? selectedFile.name : '支持常见视频格式' }}</span>
+        <div class="form-field form-field--wide media-file-field">
+          <input
+            id="file"
+            ref="videoInput"
+            class="media-file-input"
+            type="file"
+            accept="video/*"
+            required
+            @change="handleFileChange"
+          />
+          <label class="media-file-picker" for="file">
+            <span class="media-file-picker__eyebrow">视频文件</span>
+            <span class="media-file-picker__action">{{ selectedFile ? '更换视频文件' : '选择视频文件' }}</span>
+            <span class="media-file-picker__hint">{{ selectedFile ? selectedFile.name : '支持常见视频格式' }}</span>
+          </label>
         </div>
 
         <div class="form-field">
@@ -107,9 +154,20 @@ onBeforeUnmount(revokeThumbnailPreview);
           <input id="title" v-model="title" type="text" required placeholder="为作品起一个好标题" />
         </div>
 
-        <div class="form-field">
-          <label for="thumbnail">上传封面</label>
-          <input id="thumbnail" ref="thumbnailInput" type="file" accept="image/jpeg,image/png,image/webp" @change="handleThumbnailChange" />
+        <div class="form-field media-file-field">
+          <input
+            id="thumbnail"
+            ref="thumbnailInput"
+            class="media-file-input"
+            type="file"
+            accept="image/jpeg,image/png,image/webp"
+            @change="handleThumbnailChange"
+          />
+          <label class="media-file-picker" for="thumbnail">
+            <span class="media-file-picker__eyebrow">视频封面</span>
+            <span class="media-file-picker__action">{{ selectedThumbnail ? '更换封面文件' : '选择封面文件' }}</span>
+            <span class="media-file-picker__hint">{{ selectedThumbnail ? selectedThumbnail.name : '支持 JPG、PNG、WebP' }}</span>
+          </label>
           <img v-if="thumbnailPreview" :src="thumbnailPreview" alt="视频封面预览" class="thumbnail-preview" />
         </div>
 
@@ -150,6 +208,14 @@ onBeforeUnmount(revokeThumbnailPreview);
 .form-field input, .form-field textarea { box-sizing: border-box; width: 100%; border: 1px solid var(--border); border-radius: 10px; padding: 11px 12px; background: var(--surface-2); color: var(--text); font: inherit; outline-color: var(--brand); }
 .form-field input[type='file'] { background: var(--surface-2); }
 .form-field span { color: var(--muted); font-size: .82rem; }
+.media-file-field { position: relative; }
+.media-file-field .media-file-input { position: absolute; inset: auto; width: 1px; height: 1px; padding: 0; border: 0; opacity: 0; pointer-events: none; }
+.media-file-field .media-file-picker { display: grid; gap: 6px; box-sizing: border-box; width: 100%; min-height: 96px; border: 1px solid color-mix(in srgb, var(--border) 78%, var(--brand) 22%); border-radius: 16px; padding: 16px 18px; background: linear-gradient(135deg, var(--surface-2), color-mix(in srgb, var(--surface-2) 84%, var(--brand) 16%)); cursor: pointer; box-shadow: inset 0 1px 0 color-mix(in srgb, white 42%, transparent); transition: border-color .18s ease, box-shadow .18s ease, transform .18s ease; }
+.media-file-field .media-file-picker:hover { border-color: color-mix(in srgb, var(--brand) 48%, var(--border)); box-shadow: 0 12px 28px color-mix(in srgb, var(--brand-action) 12%, transparent), inset 0 1px 0 color-mix(in srgb, white 48%, transparent); transform: translateY(-1px); }
+.media-file-field .media-file-input:focus-visible + .media-file-picker { outline: 3px solid color-mix(in srgb, var(--brand) 26%, transparent); outline-offset: 3px; border-color: var(--brand); }
+.media-file-field .media-file-picker__eyebrow { color: var(--brand); font-size: .74rem; font-weight: 850; letter-spacing: .12em; text-transform: uppercase; }
+.media-file-field .media-file-picker__action { color: var(--text); font-size: 1.04rem; font-weight: 800; }
+.media-file-field .media-file-picker__hint { max-width: 100%; overflow: hidden; color: var(--muted); font-size: .84rem; text-overflow: ellipsis; white-space: nowrap; }
 .form-field textarea { min-height: 116px; resize: vertical; }
 .thumbnail-preview { width: 100%; max-height: 180px; border-radius: 10px; object-fit: cover; }
 .upload-actions { padding-top: 4px; }

@@ -38,9 +38,25 @@ class SecurityAuthorizationTest {
 
     @Test
     void onlyUserCanUpload() throws Exception {
-        mvc.perform(post("/api/videos/upload").with(user("creator").roles("USER")))
+        mvc.perform(post("/api/videos/upload-session").with(user("creator").roles("USER")))
                 .andExpect(status().isOk());
-        mvc.perform(post("/api/videos/upload").with(user("reviewer").roles("REVIEWER")))
+        mvc.perform(post("/api/videos/upload-session").with(user("reviewer").roles("REVIEWER")))
+                .andExpect(status().isForbidden());
+        mvc.perform(post("/api/videos/upload-complete").with(user("creator").roles("USER")))
+                .andExpect(status().isOk());
+        mvc.perform(post("/api/videos/upload-complete").with(user("reviewer").roles("REVIEWER")))
+                .andExpect(status().isForbidden());
+        mvc.perform(post("/api/videos/upload-cancel").with(user("creator").roles("USER")))
+                .andExpect(status().isOk());
+        mvc.perform(post("/api/videos/upload-cancel").with(user("reviewer").roles("REVIEWER")))
+                .andExpect(status().isForbidden());
+        mvc.perform(get("/api/users/me/videos/10/download/video").with(user("creator").roles("USER")))
+                .andExpect(status().isOk());
+        mvc.perform(get("/api/users/me/videos/10/download/video").with(user("reviewer").roles("REVIEWER")))
+                .andExpect(status().isForbidden());
+        mvc.perform(get("/api/users/me/videos/10/download/thumbnail").with(user("creator").roles("USER")))
+                .andExpect(status().isOk());
+        mvc.perform(get("/api/users/me/videos/10/download/thumbnail").with(user("admin").roles("ADMIN")))
                 .andExpect(status().isForbidden());
     }
 
@@ -64,8 +80,28 @@ class SecurityAuthorizationTest {
 
     @RestController
     static class ProbeController {
-        @PostMapping("/api/videos/upload")
-        ResponseEntity<Void> upload() {
+        @PostMapping("/api/videos/upload-session")
+        ResponseEntity<Void> uploadSession() {
+            return ResponseEntity.ok().build();
+        }
+
+        @PostMapping("/api/videos/upload-complete")
+        ResponseEntity<Void> uploadComplete() {
+            return ResponseEntity.ok().build();
+        }
+
+        @PostMapping("/api/videos/upload-cancel")
+        ResponseEntity<Void> uploadCancel() {
+            return ResponseEntity.ok().build();
+        }
+
+        @GetMapping("/api/users/me/videos/{id}/download/video")
+        ResponseEntity<Void> downloadVideo() {
+            return ResponseEntity.ok().build();
+        }
+
+        @GetMapping("/api/users/me/videos/{id}/download/thumbnail")
+        ResponseEntity<Void> downloadThumbnail() {
             return ResponseEntity.ok().build();
         }
 

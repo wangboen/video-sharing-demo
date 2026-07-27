@@ -30,8 +30,8 @@ function video(id, title = `video-${id}`) {
   return {
     id,
     title,
-    videoUrl: `/uploads/${id}.mp4`,
-    thumbnailUrl: `/thumbnails/${id}.jpg`,
+    videoUrl: `http://minio.local/video-sharing/public/videos/${id}.mp4`,
+    thumbnailUrl: `http://minio.local/video-sharing/public/thumbnails/${id}.jpg`,
     views: 12,
     uploadDate: '2026-07-20T00:00:00.000Z',
     description: `${title} description`,

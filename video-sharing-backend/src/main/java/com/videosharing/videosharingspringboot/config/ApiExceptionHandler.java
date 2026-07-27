@@ -8,7 +8,6 @@ import org.springframework.web.bind.annotation.RestControllerAdvice;
 
 import java.util.Map;
 import com.videosharing.videosharingspringboot.service.ModerationConflictException;
-import com.videosharing.videosharingspringboot.service.ModerationService;
 
 @RestControllerAdvice
 public class ApiExceptionHandler {
@@ -25,11 +24,6 @@ public class ApiExceptionHandler {
     @ExceptionHandler(ModerationConflictException.class)
     public ResponseEntity<Map<String, String>> handleModerationConflict(ModerationConflictException exception) {
         return ResponseEntity.status(HttpStatus.CONFLICT).body(Map.of("message", exception.getMessage()));
-    }
-
-    @ExceptionHandler(ModerationService.PreviewNotFoundException.class)
-    public ResponseEntity<Map<String, String>> handlePreviewNotFound(RuntimeException exception) {
-        return ResponseEntity.status(HttpStatus.NOT_FOUND).body(Map.of("message", exception.getMessage()));
     }
 
     @ExceptionHandler(IllegalArgumentException.class)

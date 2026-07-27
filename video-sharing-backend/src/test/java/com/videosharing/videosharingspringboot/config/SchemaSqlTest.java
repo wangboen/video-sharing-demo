@@ -26,6 +26,8 @@ class SchemaSqlTest {
                     .contains("constraint chk_staff_accounts_role check (role in ('reviewer', 'admin'))")
                     .contains("status varchar(20) not null default 'pending'")
                     .contains("reviewer_id bigint null")
+                    .contains("file_deleted_at datetime(6) null")
+                    .contains("thumbnail_deleted_at datetime(6) null")
                     .contains("version bigint not null default 0")
                     .contains("lease_owner_id bigint null")
                     .contains("claimed_at datetime(6) null")

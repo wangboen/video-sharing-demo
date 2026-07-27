@@ -31,6 +31,8 @@ const task = {
   claimedAt: '2026-07-24T00:00:00Z',
   leaseExpiresAt: '2026-07-24T00:15:00Z',
   hasThumbnail: true,
+  videoUrl: 'http://minio.local/download/pending/users/9/session/video/video.mp4?X-Amz-Signature=abc',
+  thumbnailUrl: 'http://minio.local/download/pending/users/9/session/thumbnail/cover.png?X-Amz-Signature=def',
 }
 
 function deferred() {
@@ -43,15 +45,8 @@ function deferred() {
   return { promise, resolve, reject }
 }
 
-function mediaResponses() {
-  mocks.get.mockImplementation((url) => Promise.resolve({
-    data: new Blob([url], { type: url.endsWith('video') ? 'video/mp4' : 'image/jpeg' }),
-  }))
-}
-
 async function mountClaimed(overrides = {}) {
   mocks.post.mockResolvedValueOnce({ status: 200, data: { ...task, ...overrides } })
-  mediaResponses()
   const wrapper = mount(ModerationView)
   await wrapper.get('[data-test="claim"]').trigger('click')
   await flushPromises()
@@ -69,10 +64,9 @@ describe('moderation claim workbench', () => {
     })
   })
 
-  it('claims once, renders full metadata, and loads authenticated Blob media', async () => {
+  it('claims once, renders full metadata, and uses presigned moderation preview urls', async () => {
     let resolveClaim
     mocks.post.mockReturnValueOnce(new Promise((resolve) => { resolveClaim = resolve }))
-    mediaResponses()
     const wrapper = mount(ModerationView)
 
     await wrapper.get('[data-test="claim"]').trigger('click')
@@ -89,23 +83,16 @@ describe('moderation claim workbench', () => {
     expect(wrapper.text()).toContain('版本 4')
     expect(wrapper.text()).toContain('领取时间')
     expect(wrapper.text()).toContain('租约到期')
-    expect(mocks.get).toHaveBeenCalledWith(
-      '/api/moderation/videos/42/preview/video',
-      { responseType: 'blob' },
-    )
-    expect(mocks.get).toHaveBeenCalledWith(
-      '/api/moderation/videos/42/preview/thumbnail',
-      { responseType: 'blob' },
-    )
-    expect(wrapper.get('video').attributes('src')).toBe('blob:moderation-1')
-    expect(wrapper.get('video').attributes('poster')).toBe('blob:moderation-2')
+    expect(mocks.get).not.toHaveBeenCalled()
+    expect(mocks.createUrl).not.toHaveBeenCalled()
+    expect(wrapper.get('video').attributes('src')).toBe(task.videoUrl)
+    expect(wrapper.get('video').attributes('poster')).toBe(task.thumbnailUrl)
   })
 
   it('shows a directional empty state for 204 and accepts an existing lease response', async () => {
     mocks.post
       .mockResolvedValueOnce({ status: 204, data: '' })
       .mockResolvedValueOnce({ status: 200, data: task })
-    mediaResponses()
     const wrapper = mount(ModerationView)
 
     await wrapper.get('[data-test="claim"]').trigger('click')
@@ -119,16 +106,16 @@ describe('moderation claim workbench', () => {
     expect(wrapper.text()).toContain('租约进行中')
   })
 
-  it('does not request a thumbnail when the task has none and revokes every URL on unmount', async () => {
-    const wrapper = await mountClaimed({ hasThumbnail: false })
+  it('omits the poster when the task has no thumbnail url', async () => {
+    const wrapper = await mountClaimed({ hasThumbnail: false, thumbnailUrl: null })
 
-    expect(mocks.get).toHaveBeenCalledTimes(1)
-    expect(mocks.get.mock.calls[0][0]).toContain('/preview/video')
+    expect(mocks.get).not.toHaveBeenCalled()
+    expect(wrapper.get('video').attributes('src')).toBe(task.videoUrl)
+    expect(wrapper.get('video').attributes('poster')).toBeUndefined()
 
     wrapper.unmount()
 
-    expect(mocks.revokeUrl).toHaveBeenCalledTimes(1)
-    expect(mocks.revokeUrl).toHaveBeenCalledWith('blob:moderation-1')
+    expect(mocks.revokeUrl).not.toHaveBeenCalled()
   })
 
   it('heartbeats after 60 seconds, replaces version and expiry, and stops after unmount', async () => {
@@ -161,7 +148,7 @@ describe('moderation claim workbench', () => {
 
     expect(wrapper.get('[role="alert"]').text()).toContain('租约已发生变化')
     expect(wrapper.find('video').exists()).toBe(false)
-    expect(mocks.revokeUrl).toHaveBeenCalledTimes(2)
+    expect(mocks.revokeUrl).not.toHaveBeenCalled()
 
     await vi.advanceTimersByTimeAsync(60_000)
     expect(mocks.post).toHaveBeenCalledTimes(2)
@@ -221,7 +208,7 @@ describe('moderation claim workbench', () => {
 
     expect(mocks.delete).toHaveBeenCalledWith('/api/moderation/videos/42/claim')
     expect(wrapper.find('video').exists()).toBe(false)
-    expect(mocks.revokeUrl).toHaveBeenCalledTimes(2)
+    expect(mocks.revokeUrl).not.toHaveBeenCalled()
     expect(wrapper.text()).toContain('任务已释放')
   })
 

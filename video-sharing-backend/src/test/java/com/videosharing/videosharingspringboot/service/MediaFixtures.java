@@ -28,6 +28,19 @@ final class MediaFixtures {
         return output.toByteArray();
     }
 
+    static byte[] mp4WithXmlMetadata() {
+        ByteArrayOutputStream output = new ByteArrayOutputStream();
+        writeBox(output, "ftyp", concat(
+                "isom".getBytes(java.nio.charset.StandardCharsets.US_ASCII),
+                bytes(0, 0, 0, 0),
+                "isom".getBytes(java.nio.charset.StandardCharsets.US_ASCII),
+                "mp42".getBytes(java.nio.charset.StandardCharsets.US_ASCII)));
+        writeBox(output, "moov", "<?xml version=\"1.0\"?><x:xmpmeta></x:xmpmeta>"
+                .getBytes(java.nio.charset.StandardCharsets.US_ASCII));
+        writeBox(output, "mdat", bytes(0));
+        return output.toByteArray();
+    }
+
     static InputStream largeMp4(long payloadSize) {
         if (payloadSize > Integer.MAX_VALUE - 8L) {
             throw new IllegalArgumentException("fixture payload too large");

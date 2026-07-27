@@ -11,9 +11,7 @@ import com.videosharing.videosharingspringboot.repository.StaffAccountRepository
 import com.videosharing.videosharingspringboot.repository.VideoRepository;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
-import org.springframework.core.io.PathResource;
 import org.springframework.data.domain.PageRequest;
-import org.springframework.http.MediaType;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.PlatformTransactionManager;
@@ -29,7 +27,6 @@ import java.nio.file.Paths;
 import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
-import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
@@ -41,63 +38,105 @@ public class ModerationService {
 
     private final VideoRepository videos;
     private final StaffAccountRepository staffAccounts;
-    private final Path pendingVideos;
-    private final Path pendingThumbnails;
-    private final Path publicVideos;
-    private final Path publicThumbnails;
+    private final ObjectStorageService objectStorage;
+    private final Path objectValidationPath;
     private final Duration leaseDuration;
     private final Clock clock;
     private final TransactionOperations decisionTransactions;
+    private final String pendingPrefix;
+    private final String publicPrefix;
 
     @Autowired
     public ModerationService(VideoRepository videos,
                              StaffAccountRepository staffAccounts,
-                             @Value("${file.pending-upload-dir}") String pendingVideos,
-                             @Value("${file.pending-thumbnail-dir}") String pendingThumbnails,
-                             @Value("${file.upload-dir}") String publicVideos,
-                             @Value("${file.thumbnail-dir}") String publicThumbnails,
                              @Value("${moderation.lease-duration-minutes:15}") long leaseMinutes,
-                             PlatformTransactionManager transactionManager) {
-        this(videos, staffAccounts, Paths.get(pendingVideos), Paths.get(pendingThumbnails),
-                Paths.get(publicVideos), Paths.get(publicThumbnails),
-                Duration.ofMinutes(leaseMinutes), Clock.systemUTC(),
-                decisionTransactionTemplate(transactionManager));
+                              ObjectStorageService objectStorage,
+                              @Value("${object-storage.validation-dir:${java.io.tmpdir}/video-sharing-validation}") String objectValidationDir,
+                              @Value("${object-storage.public-base-url:}") String objectStoragePublicBaseUrl,
+                              @Value("${object-storage.pending-prefix:pending/}") String pendingPrefix,
+                              @Value("${object-storage.public-prefix:public/}") String publicPrefix,
+                              PlatformTransactionManager transactionManager) {
+        this(videos, staffAccounts, Duration.ofMinutes(leaseMinutes), Clock.systemUTC(),
+                decisionTransactionTemplate(transactionManager), objectStorage, Paths.get(objectValidationDir),
+                objectStoragePublicBaseUrl, pendingPrefix, publicPrefix);
     }
 
     ModerationService(VideoRepository videos,
                       StaffAccountRepository staffAccounts,
-                      Path pendingVideos,
-                      Path pendingThumbnails,
-                      Path publicVideos,
-                      Path publicThumbnails,
                       Duration leaseDuration,
                       Clock clock) {
-        this(videos, staffAccounts, pendingVideos, pendingThumbnails, publicVideos, publicThumbnails,
-                leaseDuration, clock, TransactionOperations.withoutTransaction());
+        this(videos, staffAccounts, leaseDuration, clock, TransactionOperations.withoutTransaction(), null,
+                Paths.get(System.getProperty("java.io.tmpdir")).resolve("video-sharing-validation"), "",
+                "pending/", "public/");
     }
 
     ModerationService(VideoRepository videos,
                       StaffAccountRepository staffAccounts,
-                      Path pendingVideos,
-                      Path pendingThumbnails,
-                      Path publicVideos,
-                      Path publicThumbnails,
+                      Duration leaseDuration,
+                      Clock clock,
+                      ObjectStorageService objectStorage,
+                      Path objectValidationPath) {
+        this(videos, staffAccounts, leaseDuration, clock, TransactionOperations.withoutTransaction(), objectStorage,
+                objectValidationPath, "", "pending/", "public/");
+    }
+
+    ModerationService(VideoRepository videos,
+                      StaffAccountRepository staffAccounts,
+                      Duration leaseDuration,
+                      Clock clock,
+                      ObjectStorageService objectStorage,
+                      Path objectValidationPath,
+                      String objectStoragePublicBaseUrl) {
+        this(videos, staffAccounts, leaseDuration, clock, TransactionOperations.withoutTransaction(), objectStorage,
+                objectValidationPath, objectStoragePublicBaseUrl, "pending/", "public/");
+    }
+
+    ModerationService(VideoRepository videos,
+                      StaffAccountRepository staffAccounts,
+                      Duration leaseDuration,
+                      Clock clock,
+                      ObjectStorageService objectStorage,
+                      Path objectValidationPath,
+                      String objectStoragePublicBaseUrl,
+                      String pendingPrefix,
+                      String publicPrefix) {
+        this(videos, staffAccounts, leaseDuration, clock, TransactionOperations.withoutTransaction(), objectStorage,
+                objectValidationPath, objectStoragePublicBaseUrl, pendingPrefix, publicPrefix);
+    }
+
+    ModerationService(VideoRepository videos,
+                      StaffAccountRepository staffAccounts,
                       Duration leaseDuration,
                       Clock clock,
                       TransactionOperations decisionTransactions) {
+        this(videos, staffAccounts, leaseDuration, clock, decisionTransactions, null,
+                Paths.get(System.getProperty("java.io.tmpdir")).resolve("video-sharing-validation"), "",
+                "pending/", "public/");
+    }
+
+    ModerationService(VideoRepository videos,
+                      StaffAccountRepository staffAccounts,
+                      Duration leaseDuration,
+                      Clock clock,
+                      TransactionOperations decisionTransactions,
+                      ObjectStorageService objectStorage,
+                      Path objectValidationPath,
+                      String objectStoragePublicBaseUrl,
+                      String pendingPrefix,
+                      String publicPrefix) {
         if (leaseDuration == null || leaseDuration.compareTo(STAFF_HEARTBEAT_INTERVAL) <= 0) {
             throw new IllegalArgumentException(
                     "Moderation lease duration must be greater than the 60-second staff heartbeat interval");
         }
         this.videos = videos;
         this.staffAccounts = staffAccounts;
-        this.pendingVideos = normalize(pendingVideos);
-        this.pendingThumbnails = normalize(pendingThumbnails);
-        this.publicVideos = normalize(publicVideos);
-        this.publicThumbnails = normalize(publicThumbnails);
+        this.objectStorage = objectStorage;
+        this.objectValidationPath = normalize(objectValidationPath);
         this.leaseDuration = leaseDuration;
         this.clock = clock;
         this.decisionTransactions = Objects.requireNonNull(decisionTransactions);
+        this.pendingPrefix = normalizePrefix(pendingPrefix);
+        this.publicPrefix = normalizePrefix(publicPrefix);
     }
 
     @Transactional
@@ -111,7 +150,7 @@ public class ModerationService {
 
         Optional<Video> existing = videos.findActiveLeaseForOwner(owner.getId(), VideoStatus.PENDING, now);
         if (existing.isPresent()) {
-            return existing.map(ModerationVideoResponse::from);
+            return existing.map(this::moderationResponse);
         }
 
         List<Video> available = videos.findClaimableForUpdate(VideoStatus.PENDING, now, PageRequest.of(0, 1));
@@ -124,7 +163,7 @@ public class ModerationService {
         video.setLeaseExpiresAt(now.plus(leaseDuration));
         videos.save(video);
         videos.flush();
-        return Optional.of(ModerationVideoResponse.from(video));
+        return Optional.of(moderationResponse(video));
     }
 
     @Transactional
@@ -134,7 +173,7 @@ public class ModerationService {
         video.setLeaseExpiresAt(now().plus(leaseDuration));
         videos.save(video);
         videos.flush();
-        return ModerationVideoResponse.from(video);
+        return moderationResponse(video);
     }
 
     @Transactional
@@ -152,41 +191,17 @@ public class ModerationService {
         videos.save(video);
     }
 
-    @Transactional(readOnly = true)
-    public ModerationPreview preview(Long id, String username, boolean thumbnail) {
-        Video video = videos.findById(id)
-                .orElseThrow(() -> new ModerationConflictException("Video not found"));
-        assertActiveOwner(video, username);
-        String fileName = thumbnail ? video.getThumbnailPath() : video.getFilePath();
-        if (fileName == null) {
-            throw new PreviewNotFoundException("Preview not found");
-        }
-        Path path = safeResolve(thumbnail ? pendingThumbnails : pendingVideos, fileName);
-        if (!Files.isRegularFile(path)) {
-            throw new PreviewNotFoundException("Preview not found");
-        }
-        try {
-            MediaFileValidator.MediaFormat format = MediaFileValidator.inspect(
-                    path, thumbnail
-                            ? MediaFileValidator.MediaKind.THUMBNAIL
-                            : MediaFileValidator.MediaKind.VIDEO);
-            return new ModerationPreview(
-                    new PathResource(path),
-                    MediaType.parseMediaType(format.mediaType()),
-                    "preview" + format.serverExtension());
-        } catch (IOException | IllegalArgumentException exception) {
-            throw new PreviewNotFoundException("Preview not found");
-        }
-    }
-
     public ModerationDecisionResponse decide(Long id, String username, ModerationDecisionRequest request) {
-        List<Move> completed = new ArrayList<>();
         ApprovalAttempt attempt = new ApprovalAttempt();
         try {
             ModerationDecisionResponse response = decisionTransactions.execute(
-                    transaction -> decideInTransaction(id, username, request, completed, attempt));
+                    transaction -> decideInTransaction(id, username, request, attempt));
             if (response == null) {
                 throw new IllegalStateException("Moderation decision transaction returned no result");
+            }
+            if (attempt.started()) {
+                deleteObject(attempt.filePath);
+                deleteObject(attempt.thumbnailPath);
             }
             return response;
         } catch (RuntimeException exception) {
@@ -195,23 +210,12 @@ public class ModerationService {
             }
             Throwable original = exception instanceof MediaPublicationFailure
                     && exception.getCause() != null ? exception.getCause() : exception;
-            IOException compensationFailure = null;
-            try {
-                restore(completed);
-            } catch (IOException restoreFailure) {
-                compensationFailure = restoreFailure;
-            }
             attempt.reset();
             String detail = original.getMessage() == null
                     ? original.getClass().getSimpleName()
                     : original.getMessage();
-            String message = compensationFailure == null
-                    ? "Could not publish approved media: " + detail
-                    : "Could not publish approved media and compensation failed: " + detail;
+            String message = "Could not publish approved media: " + detail;
             ModerationConflictException failure = new ModerationConflictException(message, original);
-            if (compensationFailure != null) {
-                failure.addSuppressed(compensationFailure);
-            }
             throw failure;
         }
     }
@@ -219,7 +223,6 @@ public class ModerationService {
     private ModerationDecisionResponse decideInTransaction(Long id,
                                                            String username,
                                                            ModerationDecisionRequest request,
-                                                           List<Move> completed,
                                                            ApprovalAttempt attempt) {
         Video video = locked(id);
         if (video.getStatus() != VideoStatus.PENDING) {
@@ -239,7 +242,7 @@ public class ModerationService {
             throw new IllegalArgumentException("Decision must be APPROVE or REJECT");
         }
         attempt.capture(video);
-        approve(video, completed);
+        approve(video);
         return ModerationDecisionResponse.from(video);
     }
 
@@ -258,26 +261,32 @@ public class ModerationService {
         clearLease(video);
     }
 
-    private void approve(Video video, List<Move> completed) {
-        try {
-            Path pendingVideo = safeResolve(pendingVideos, video.getFilePath());
-            MediaFileValidator.MediaFormat videoFormat = MediaFileValidator.inspect(
-                    pendingVideo, MediaFileValidator.MediaKind.VIDEO);
-            Path pendingThumbnail = null;
-            MediaFileValidator.MediaFormat thumbnailFormat = null;
-            if (video.getThumbnailPath() != null) {
-                pendingThumbnail = safeResolve(pendingThumbnails, video.getThumbnailPath());
-                thumbnailFormat = MediaFileValidator.inspect(
-                        pendingThumbnail, MediaFileValidator.MediaKind.THUMBNAIL);
-            }
+    private void approve(Video video) {
+        approveObjectStorage(video);
+    }
 
-            String publishedVideoName = UUID.randomUUID() + videoFormat.serverExtension();
-            String publishedThumbnailName = thumbnailFormat == null
+    private void approveObjectStorage(Video video) {
+        MediaFileValidator.StagedMedia stagedVideo = null;
+        MediaFileValidator.StagedMedia stagedThumbnail = null;
+        try {
+            String pendingVideoName = video.getFilePath();
+            String pendingThumbnailName = video.getThumbnailPath();
+            assertPendingKey(pendingVideoName);
+            if (pendingThumbnailName != null) {
+                assertPendingKey(pendingThumbnailName);
+            }
+            stagedVideo = validateObject(pendingVideoName, MediaFileValidator.MediaKind.VIDEO);
+            stagedThumbnail = pendingThumbnailName == null
                     ? null
-                    : UUID.randomUUID() + thumbnailFormat.serverExtension();
-            move(pendingVideo, safeResolve(publicVideos, publishedVideoName), completed);
-            if (pendingThumbnail != null) {
-                move(pendingThumbnail, safeResolve(publicThumbnails, publishedThumbnailName), completed);
+                    : validateObject(pendingThumbnailName, MediaFileValidator.MediaKind.THUMBNAIL);
+            String publishedVideoName = publishedObjectKey(video, "video", stagedVideo.format());
+            String publishedThumbnailName = stagedThumbnail == null
+                    ? null
+                    : publishedObjectKey(video, "thumbnail", stagedThumbnail.format());
+            objectStorage.copy(pendingVideoName, publishedVideoName, stagedVideo.format().mediaType());
+            if (stagedThumbnail != null) {
+                objectStorage.copy(pendingThumbnailName, publishedThumbnailName,
+                        stagedThumbnail.format().mediaType());
             }
             video.setFilePath(publishedVideoName);
             video.setThumbnailPath(publishedThumbnailName);
@@ -289,47 +298,68 @@ public class ModerationService {
             videos.saveAndFlush(video);
         } catch (IOException exception) {
             throw new MediaPublicationFailure(exception);
+        } finally {
+            cleanup(stagedVideo == null ? null : stagedVideo.path());
+            cleanup(stagedThumbnail == null ? null : stagedThumbnail.path());
         }
     }
 
-    private void move(Path source, Path target, List<Move> completed) throws IOException {
-        if (!Files.isRegularFile(source) || Files.exists(target)) {
-            throw new IOException("Unsafe media source/destination state for " + source.getFileName());
-        }
-        Files.createDirectories(target.getParent());
-        MediaFileValidator.moveAtomically(source, target);
-        completed.add(new Move(source, target));
+    private MediaFileValidator.StagedMedia validateObject(String key, MediaFileValidator.MediaKind kind)
+            throws IOException {
+        ObjectStorageService.StoredObject object = objectStorage.get(key);
+        return MediaFileValidator.stageObject(object.inputStream(), object.contentLength(), fileName(key),
+                object.contentType(), objectValidationPath, kind);
     }
 
-    private void restore(List<Move> completed) throws IOException {
-        IOException firstFailure = null;
-        for (int index = completed.size() - 1; index >= 0; index--) {
-            Move move = completed.get(index);
-            try {
-                Files.createDirectories(move.source().getParent());
-                boolean targetExists = Files.isRegularFile(move.target());
-                boolean sourceExists = Files.exists(move.source());
-                if (!targetExists || sourceExists) {
-                    throw new IOException("Unsafe compensation state for " + move.source().getFileName()
-                            + ": approved target must exist and pending source must be absent");
-                }
-                Files.move(move.target(), move.source());
-            } catch (IOException exception) {
-                if (firstFailure == null) {
-                    firstFailure = exception;
-                } else {
-                    firstFailure.addSuppressed(exception);
-                }
-            }
+    private String publishedObjectKey(Video video, String slot, MediaFileValidator.MediaFormat format) {
+        Long userId = video.getUser() == null ? 0L : video.getUser().getId();
+        return publicPrefix + "users/" + userId + "/" + slot + "/" + UUID.randomUUID() + format.serverExtension();
+    }
+
+    private void deleteObject(String key) {
+        if (objectStorage != null && key != null && !key.isBlank()) {
+            objectStorage.delete(key);
         }
-        if (firstFailure != null) {
-            throw firstFailure;
+    }
+
+    private void assertPendingKey(String key) {
+        if (key == null || !key.startsWith(pendingPrefix) || key.contains("..") || key.contains("\\")) {
+            throw new IllegalArgumentException("Invalid pending object key");
+        }
+    }
+
+    private static String fileName(String key) {
+        int slash = key.lastIndexOf('/');
+        return slash < 0 ? key : key.substring(slash + 1);
+    }
+
+    private static void cleanup(Path target) {
+        if (target == null) {
+            return;
+        }
+        try {
+            Files.deleteIfExists(target);
+        } catch (IOException ignored) {
         }
     }
 
     private Video locked(Long id) {
         return videos.findByIdForUpdate(id)
                 .orElseThrow(() -> new ModerationConflictException("Video not found"));
+    }
+
+    private ModerationVideoResponse moderationResponse(Video video) {
+        String videoUrl = presignedPreviewUrl(video.getFilePath());
+        String thumbnailUrl = video.getThumbnailPath() == null ? null : presignedPreviewUrl(video.getThumbnailPath());
+        return ModerationVideoResponse.from(video, videoUrl, thumbnailUrl);
+    }
+
+    private String presignedPreviewUrl(String key) {
+        if (objectStorage == null || key == null || key.isBlank()) {
+            return null;
+        }
+        String name = fileName(key);
+        return objectStorage.presignDownload(key, name, leaseDuration).url().toString();
     }
 
     private void assertActiveOwner(Video video, String username) {
@@ -357,12 +387,12 @@ public class ModerationService {
         return path.toAbsolutePath().normalize();
     }
 
-    private static Path safeResolve(Path directory, String fileName) {
-        Path resolved = directory.resolve(fileName).normalize();
-        if (!resolved.startsWith(directory)) {
-            throw new IllegalArgumentException("Invalid stored file name");
+    private static String normalizePrefix(String prefix) {
+        String normalized = prefix == null ? "" : prefix.trim().replace('\\', '/');
+        while (normalized.startsWith("/")) {
+            normalized = normalized.substring(1);
         }
-        return resolved;
+        return normalized.endsWith("/") ? normalized : normalized + "/";
     }
 
     private static TransactionTemplate decisionTransactionTemplate(
@@ -370,9 +400,6 @@ public class ModerationService {
         TransactionTemplate template = new TransactionTemplate(transactionManager);
         template.setPropagationBehavior(TransactionDefinition.PROPAGATION_REQUIRES_NEW);
         return template;
-    }
-
-    private record Move(Path source, Path target) {
     }
 
     private static final class ApprovalAttempt {
@@ -426,9 +453,4 @@ public class ModerationService {
         }
     }
 
-    public static class PreviewNotFoundException extends RuntimeException {
-        public PreviewNotFoundException(String message) {
-            super(message);
-        }
-    }
 }

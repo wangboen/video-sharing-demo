@@ -35,6 +35,8 @@ CREATE TABLE videos (
     reviewer_id BIGINT NULL,
     reviewed_at DATETIME(6) NULL,
     rejection_reason VARCHAR(500) NULL,
+    file_deleted_at DATETIME(6) NULL,
+    thumbnail_deleted_at DATETIME(6) NULL,
     version BIGINT NOT NULL DEFAULT 0,
     lease_owner_id BIGINT NULL,
     claimed_at DATETIME(6) NULL,

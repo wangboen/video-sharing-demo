@@ -19,7 +19,7 @@ public interface VideoRepository extends JpaRepository<Video, Long> {
     List<Video> findAllByStatusOrderByUploadDateAscIdAsc(VideoStatus status);
     Optional<Video> findByIdAndStatus(Long id, VideoStatus status);
     List<Video> findAllByUserIdOrderByUploadDateDescIdDesc(Long userId);
-    List<Video> findAllByStatusIsNull();
+    Optional<Video> findByIdAndUserId(Long id, Long userId);
 
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     @Query("select v from Video v where v.id = :id")
@@ -45,4 +45,16 @@ public interface VideoRepository extends JpaRepository<Video, Long> {
     List<Video> findClaimableForUpdate(@Param("status") VideoStatus status,
                                        @Param("now") Instant now,
                                        Pageable pageable);
+
+    @Query("""
+            select v from Video v
+            where v.status = :status
+              and v.reviewedAt < :expiredBefore
+              and ((v.filePath is not null and v.fileDeletedAt is null)
+                or (v.thumbnailPath is not null and v.thumbnailDeletedAt is null))
+            order by v.reviewedAt asc, v.id asc
+            """)
+    List<Video> findRejectedWithDownloadableObjectsBefore(@Param("status") VideoStatus status,
+                                                          @Param("expiredBefore") Instant expiredBefore,
+                                                          Pageable pageable);
 }

@@ -16,14 +16,17 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.data.domain.PageRequest;
 
-import java.nio.file.Files;
 import java.nio.file.Path;
+import java.io.ByteArrayInputStream;
+import java.net.URI;
 import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
 import java.time.LocalDateTime;
 import java.time.ZoneOffset;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 
 import static org.junit.jupiter.api.Assertions.*;
@@ -36,6 +39,7 @@ class ModerationServiceTest {
     @Mock StaffAccountRepository staffAccounts;
     @TempDir Path temp;
     private ModerationService service;
+    private FakeObjectStorage objectStorage;
     private StaffAccount reviewer;
     private StaffAccount other;
     private final Instant now = Instant.parse("2026-07-24T12:00:00Z");
@@ -45,29 +49,50 @@ class ModerationServiceTest {
         reviewer = staff(1L, "reviewer", Role.REVIEWER);
         other = staff(2L, "other", Role.REVIEWER);
         Clock clock = Clock.fixed(now, ZoneOffset.UTC);
-        service = new ModerationService(videos, staffAccounts, temp.resolve("pending-videos"),
-                temp.resolve("pending-thumbnails"), temp.resolve("public-videos"),
-                temp.resolve("public-thumbnails"), Duration.ofMinutes(15), clock);
+        objectStorage = new FakeObjectStorage();
+        service = new ModerationService(videos, staffAccounts, Duration.ofMinutes(15), clock, objectStorage,
+                temp.resolve("validation"), "http://minio.local");
     }
 
     @Test
-    void claimReturnsExistingActiveLeaseForSameReviewer() {
+    void claimReturnsExistingActiveLeaseForSameReviewerWithPresignedPreviewUrls() {
         Video leased = pending(10L);
+        leased.setFilePath("pending/users/9/session/video/a space.mp4");
+        leased.setThumbnailPath("pending/users/9/session/thumbnail/cover image.png");
         leased.setLeaseOwner(reviewer);
         leased.setLeaseExpiresAt(now.plusSeconds(60));
         when(staffAccounts.findByUsernameForUpdate("reviewer")).thenReturn(Optional.of(reviewer));
         when(videos.findActiveLeaseForOwner(1L, VideoStatus.PENDING, now)).thenReturn(Optional.of(leased));
 
-        assertEquals(10L, service.claimNext("reviewer").orElseThrow().id());
+        var response = service.claimNext("reviewer").orElseThrow();
+
+        assertEquals(10L, response.id());
+        assertEquals("http://minio.local/download/pending/users/9/session/video/a%20space.mp4", response.videoUrl());
+        assertEquals("http://minio.local/download/pending/users/9/session/thumbnail/cover%20image.png",
+                response.thumbnailUrl());
         verify(videos, never()).findClaimableForUpdate(any(), any(), any());
+    }
+
+    @Test
+    void heartbeatReturnsPresignedMediaUrlsAndNullThumbnailUrlWhenMissing() {
+        Video leased = activeLease();
+        leased.setFilePath("pending/users/9/session/video/video.mp4");
+        leased.setThumbnailPath(null);
+        leased.setLeaseExpiresAt(now.plusSeconds(1));
+        when(videos.findByIdForUpdate(10L)).thenReturn(Optional.of(leased));
+        when(videos.save(leased)).thenReturn(leased);
+
+        var response = service.heartbeat(10L, "reviewer");
+
+        assertEquals("http://minio.local/download/pending/users/9/session/video/video.mp4", response.videoUrl());
+        assertNull(response.thumbnailUrl());
+        assertFalse(response.hasThumbnail());
     }
 
     @Test
     void leaseDurationMustBeLongerThanTheFixedSixtySecondHeartbeat() {
         IllegalArgumentException failure = assertThrows(IllegalArgumentException.class,
-                () -> new ModerationService(videos, staffAccounts, temp.resolve("pending-videos"),
-                        temp.resolve("pending-thumbnails"), temp.resolve("public-videos"),
-                        temp.resolve("public-thumbnails"), Duration.ofSeconds(60),
+                () -> new ModerationService(videos, staffAccounts, Duration.ofSeconds(60),
                         Clock.fixed(now, ZoneOffset.UTC)));
 
         assertTrue(failure.getMessage().contains("greater than the 60-second staff heartbeat"));
@@ -152,56 +177,6 @@ class ModerationServiceTest {
     }
 
     @Test
-    void nonOwnerCannotDownloadPreview() {
-        Video leased = activeLease();
-        when(videos.findById(10L)).thenReturn(Optional.of(leased));
-
-        assertThrows(ModerationConflictException.class,
-                () -> service.preview(10L, "other", false));
-    }
-
-    @Test
-    void previewRejectsActiveLegacyVideoAndThumbnailContent() throws Exception {
-        Video leased = activeLease();
-        leased.setFilePath("legacy.html");
-        leased.setThumbnailPath("legacy.svg");
-        Files.createDirectories(temp.resolve("pending-videos"));
-        Files.createDirectories(temp.resolve("pending-thumbnails"));
-        Files.writeString(temp.resolve("pending-videos/legacy.html"),
-                "<html><script>alert('preview')</script></html>");
-        Files.writeString(temp.resolve("pending-thumbnails/legacy.svg"),
-                "<svg xmlns=\"http://www.w3.org/2000/svg\"><script>alert(1)</script></svg>");
-        when(videos.findById(10L)).thenReturn(Optional.of(leased));
-
-        assertThrows(ModerationService.PreviewNotFoundException.class,
-                () -> service.preview(10L, "reviewer", false));
-        assertThrows(ModerationService.PreviewNotFoundException.class,
-                () -> service.preview(10L, "reviewer", true));
-    }
-
-    @Test
-    void previewDescriptorUsesDetectedFormatInsteadOfLegacyExtension() throws Exception {
-        Video leased = activeLease();
-        leased.setFilePath("legacy.html");
-        leased.setThumbnailPath("legacy.svg");
-        Files.createDirectories(temp.resolve("pending-videos"));
-        Files.createDirectories(temp.resolve("pending-thumbnails"));
-        Files.write(temp.resolve("pending-videos/legacy.html"), MediaFixtures.mp4());
-        Files.write(temp.resolve("pending-thumbnails/legacy.svg"), MediaFixtures.png());
-        when(videos.findById(10L)).thenReturn(Optional.of(leased));
-
-        ModerationPreview video = service.preview(10L, "reviewer", false);
-        ModerationPreview thumbnail = service.preview(10L, "reviewer", true);
-
-        assertEquals("video/mp4", video.mediaType().toString());
-        assertEquals("preview.mp4", video.safeFilename());
-        assertEquals("image/png", thumbnail.mediaType().toString());
-        assertEquals("preview.png", thumbnail.safeFilename());
-        assertEquals("legacy.html", video.resource().getFilename());
-        assertEquals("legacy.svg", thumbnail.resource().getFilename());
-    }
-
-    @Test
     void expiredLeaseCanBeReassignedAndOldOwnerCannotDecide() {
         Video leased = pending(10L);
         leased.setLeaseOwner(other);
@@ -232,6 +207,10 @@ class ModerationServiceTest {
     void rejectionRequiresTrimmedReasonAndClearsLease() {
         Video leased = activeLease();
         leased.setVersion(4L);
+        leased.setFilePath("pending/users/9/session/video/video.mp4");
+        leased.setThumbnailPath("pending/users/9/session/thumbnail/thumb.png");
+        objectStorage.put(leased.getFilePath(), "video/mp4", MediaFixtures.mp4());
+        objectStorage.put(leased.getThumbnailPath(), "image/png", MediaFixtures.png());
         when(videos.findByIdForUpdate(10L)).thenReturn(Optional.of(leased));
         when(videos.save(leased)).thenReturn(leased);
 
@@ -241,6 +220,10 @@ class ModerationServiceTest {
         assertEquals("duplicate", leased.getRejectionReason());
         assertNull(leased.getLeaseOwner());
         assertEquals(now, leased.getReviewedAt());
+        assertEquals("pending/users/9/session/video/video.mp4", leased.getFilePath());
+        assertEquals("pending/users/9/session/thumbnail/thumb.png", leased.getThumbnailPath());
+        assertTrue(objectStorage.contains(leased.getFilePath()));
+        assertTrue(objectStorage.contains(leased.getThumbnailPath()));
     }
 
     @Test
@@ -259,103 +242,6 @@ class ModerationServiceTest {
         when(videos.findByIdForUpdate(10L)).thenReturn(Optional.of(leased));
         assertThrows(IllegalArgumentException.class,
                 () -> service.decide(10L, "reviewer", decision("REJECT", "x".repeat(501), 4L)));
-    }
-
-    @Test
-    void approvalMovesMediaPairAndClearsLease() throws Exception {
-        Video leased = activeLease();
-        leased.setVersion(4L);
-        leased.setFilePath("video.mp4");
-        leased.setThumbnailPath("thumb.png");
-        Files.createDirectories(temp.resolve("pending-videos"));
-        Files.createDirectories(temp.resolve("pending-thumbnails"));
-        Files.write(temp.resolve("pending-videos/video.mp4"), MediaFixtures.mp4());
-        Files.write(temp.resolve("pending-thumbnails/thumb.png"), MediaFixtures.png());
-        when(videos.findByIdForUpdate(10L)).thenReturn(Optional.of(leased));
-
-        service.decide(10L, "reviewer", decision("APPROVE", "ignored", 4L));
-
-        assertEquals(VideoStatus.APPROVED, leased.getStatus());
-        assertNull(leased.getRejectionReason());
-        assertNotEquals("video.mp4", leased.getFilePath());
-        assertNotEquals("thumb.png", leased.getThumbnailPath());
-        assertTrue(leased.getFilePath().endsWith(".mp4"));
-        assertTrue(leased.getThumbnailPath().endsWith(".png"));
-        assertTrue(Files.exists(temp.resolve("public-videos").resolve(leased.getFilePath())));
-        assertTrue(Files.exists(temp.resolve("public-thumbnails").resolve(leased.getThumbnailPath())));
-        assertFalse(Files.exists(temp.resolve("pending-videos/video.mp4")));
-        assertFalse(Files.exists(temp.resolve("pending-thumbnails/thumb.png")));
-        assertNull(leased.getLeaseOwner());
-    }
-
-    @Test
-    void approvalRejectsMaliciousLegacyPrivateMediaWithoutPublishingIt() throws Exception {
-        Video leased = activeLease();
-        leased.setVersion(4L);
-        leased.setFilePath("legacy-video.mp4");
-        Files.createDirectories(temp.resolve("pending-videos"));
-        Files.writeString(temp.resolve("pending-videos/legacy-video.mp4"),
-                "<html><script>alert('stored xss')</script></html>");
-        when(videos.findByIdForUpdate(10L)).thenReturn(Optional.of(leased));
-
-        ModerationConflictException failure = assertThrows(ModerationConflictException.class,
-                () -> service.decide(10L, "reviewer", decision("APPROVE", null, 4L)));
-
-        assertTrue(failure.getMessage().contains("Could not publish approved media"));
-        assertEquals(VideoStatus.PENDING, leased.getStatus());
-        assertEquals("legacy-video.mp4", leased.getFilePath());
-        assertTrue(Files.exists(temp.resolve("pending-videos/legacy-video.mp4")));
-        assertFalse(Files.exists(temp.resolve("public-videos")));
-        verify(videos, never()).saveAndFlush(any());
-    }
-
-    @Test
-    void approvalDetectsSafeLegacyFormatsAndPublishesUnderServerNames() throws Exception {
-        Video leased = activeLease();
-        leased.setVersion(4L);
-        leased.setFilePath("untrusted-video.bin");
-        leased.setThumbnailPath("untrusted-thumbnail.data");
-        Files.createDirectories(temp.resolve("pending-videos"));
-        Files.createDirectories(temp.resolve("pending-thumbnails"));
-        Files.write(temp.resolve("pending-videos/untrusted-video.bin"), MediaFixtures.mp4());
-        Files.write(temp.resolve("pending-thumbnails/untrusted-thumbnail.data"), MediaFixtures.png());
-        when(videos.findByIdForUpdate(10L)).thenReturn(Optional.of(leased));
-
-        service.decide(10L, "reviewer", decision("APPROVE", null, 4L));
-
-        assertTrue(leased.getFilePath().matches("[0-9a-f-]{36}\\.mp4"));
-        assertTrue(leased.getThumbnailPath().matches("[0-9a-f-]{36}\\.png"));
-        assertTrue(Files.isRegularFile(temp.resolve("public-videos").resolve(leased.getFilePath())));
-        assertTrue(Files.isRegularFile(temp.resolve("public-thumbnails").resolve(leased.getThumbnailPath())));
-        assertFalse(Files.exists(temp.resolve("pending-videos/untrusted-video.bin")));
-        assertFalse(Files.exists(temp.resolve("pending-thumbnails/untrusted-thumbnail.data")));
-    }
-
-    @Test
-    void approvalFailsLoudlyAndPreservesOriginalCauseWhenCompensationCannotReverseMove() throws Exception {
-        Video leased = activeLease();
-        leased.setVersion(4L);
-        leased.setFilePath("video.mp4");
-        Files.createDirectories(temp.resolve("pending-videos"));
-        Files.write(temp.resolve("pending-videos/video.mp4"), MediaFixtures.mp4());
-        when(videos.findByIdForUpdate(10L)).thenReturn(Optional.of(leased));
-        RuntimeException databaseFailure = new RuntimeException("database commit failed");
-        when(videos.saveAndFlush(leased)).thenAnswer(invocation -> {
-            Files.writeString(temp.resolve("pending-videos/video.mp4"), "collision");
-            throw databaseFailure;
-        });
-
-        ModerationConflictException failure = assertThrows(ModerationConflictException.class,
-                () -> service.decide(10L, "reviewer", decision("APPROVE", null, 4L)));
-
-        assertTrue(failure.getMessage().contains("compensation failed"));
-        assertSame(databaseFailure, failure.getCause());
-        assertEquals(1, failure.getSuppressed().length);
-        assertTrue(failure.getSuppressed()[0].getMessage().contains("Unsafe compensation state"));
-        try (var published = Files.list(temp.resolve("public-videos"))) {
-            assertEquals(1, published.count());
-        }
-        assertTrue(Files.exists(temp.resolve("pending-videos/video.mp4")));
     }
 
     @Test
@@ -393,6 +279,69 @@ class ModerationServiceTest {
         return user;
     }
 
+    @Test
+    void approvalPublishesPendingObjectStorageMediaAndDeletesPrivateObjects() {
+        Video leased = activeLease();
+        leased.setVersion(4L);
+        leased.setFilePath("pending/users/9/session/video/video.mp4");
+        leased.setThumbnailPath("pending/users/9/session/thumbnail/thumb.png");
+        objectStorage.put(leased.getFilePath(), "video/mp4", MediaFixtures.mp4());
+        objectStorage.put(leased.getThumbnailPath(), "image/png", MediaFixtures.png());
+        when(videos.findByIdForUpdate(10L)).thenReturn(Optional.of(leased));
+
+        service.decide(10L, "reviewer", decision("APPROVE", null, 4L));
+
+        assertEquals(VideoStatus.APPROVED, leased.getStatus());
+        assertTrue(leased.getFilePath().startsWith("public/"));
+        assertTrue(leased.getFilePath().endsWith(".mp4"));
+        assertTrue(leased.getThumbnailPath().startsWith("public/"));
+        assertTrue(objectStorage.contains(leased.getFilePath()));
+        assertTrue(objectStorage.contains(leased.getThumbnailPath()));
+        assertFalse(objectStorage.contains("pending/users/9/session/video/video.mp4"));
+        assertFalse(objectStorage.contains("pending/users/9/session/thumbnail/thumb.png"));
+    }
+
+    @Test
+    void approvalUsesConfiguredPublicPrefixAndDeletesOriginalsAfterDatabaseSave() {
+        service = new ModerationService(videos, staffAccounts, Duration.ofMinutes(15),
+                Clock.fixed(now, ZoneOffset.UTC), objectStorage, temp.resolve("validation"),
+                "http://minio.local", "incoming/media/", "published/media/");
+        Video leased = activeLease();
+        leased.setVersion(4L);
+        leased.setFilePath("incoming/media/users/9/session/video/video.mp4");
+        leased.setThumbnailPath(null);
+        objectStorage.put(leased.getFilePath(), "video/mp4", MediaFixtures.mp4());
+        when(videos.findByIdForUpdate(10L)).thenReturn(Optional.of(leased));
+        when(videos.saveAndFlush(leased)).thenAnswer(invocation -> {
+            assertTrue(objectStorage.contains("incoming/media/users/9/session/video/video.mp4"));
+            return leased;
+        });
+
+        service.decide(10L, "reviewer", decision("APPROVE", null, 4L));
+
+        assertTrue(leased.getFilePath().startsWith("published/media/"));
+        assertTrue(objectStorage.contains(leased.getFilePath()));
+        assertFalse(objectStorage.contains("incoming/media/users/9/session/video/video.mp4"));
+    }
+
+    @Test
+    void approvalKeepsPendingObjectsWhenDatabaseSaveFailsAfterPublishingCopy() {
+        Video leased = activeLease();
+        leased.setVersion(4L);
+        leased.setFilePath("pending/users/9/session/video/video.mp4");
+        leased.setThumbnailPath("pending/users/9/session/thumbnail/thumb.png");
+        objectStorage.put(leased.getFilePath(), "video/mp4", MediaFixtures.mp4());
+        objectStorage.put(leased.getThumbnailPath(), "image/png", MediaFixtures.png());
+        when(videos.findByIdForUpdate(10L)).thenReturn(Optional.of(leased));
+        when(videos.saveAndFlush(leased)).thenThrow(new IllegalStateException("database unavailable"));
+
+        assertThrows(ModerationConflictException.class,
+                () -> service.decide(10L, "reviewer", decision("APPROVE", null, 4L)));
+
+        assertTrue(objectStorage.contains("pending/users/9/session/video/video.mp4"));
+        assertTrue(objectStorage.contains("pending/users/9/session/thumbnail/thumb.png"));
+    }
+
     private StaffAccount staff(long id, String username, Role role) {
         StaffAccount staff = new StaffAccount();
         staff.setId(id);
@@ -403,5 +352,52 @@ class ModerationServiceTest {
 
     private ModerationDecisionRequest decision(String decision, String reason, long version) {
         return new ModerationDecisionRequest(decision, reason, version);
+    }
+
+    private static final class FakeObjectStorage implements ObjectStorageService {
+        private final Map<String, Stored> objects = new HashMap<>();
+
+        @Override
+        public PresignedUpload presignUpload(String key, String contentType, Duration expiration) {
+            return new PresignedUpload(URI.create("http://minio.local/" + key), Instant.now().plus(expiration));
+        }
+
+        @Override
+        public PresignedUpload presignDownload(String key, String downloadFileName, Duration expiration) {
+            return new PresignedUpload(URI.create("http://minio.local/download/" + key.replace(" ", "%20")),
+                    Instant.now().plus(expiration));
+        }
+
+        @Override
+        public StoredObject get(String key) {
+            Stored stored = objects.get(key);
+            if (stored == null) {
+                throw new IllegalArgumentException("Missing object " + key);
+            }
+            return new StoredObject(key, stored.contentType(), stored.content().length,
+                    new ByteArrayInputStream(stored.content()));
+        }
+
+        @Override
+        public void copy(String sourceKey, String targetKey, String contentType) {
+            Stored stored = objects.get(sourceKey);
+            objects.put(targetKey, new Stored(contentType, stored.content()));
+        }
+
+        @Override
+        public void delete(String key) {
+            objects.remove(key);
+        }
+
+        void put(String key, String contentType, byte[] content) {
+            objects.put(key, new Stored(contentType, content));
+        }
+
+        boolean contains(String key) {
+            return objects.containsKey(key);
+        }
+
+        private record Stored(String contentType, byte[] content) {
+        }
     }
 }
