@@ -96,6 +96,23 @@ class CommentQueryServiceTest {
     }
 
     @Test
+    void omitsNextCursorWhenOnlyFeaturedRowsRemain() {
+        CommentQueryService service = service();
+        CommentRelation normal = relation(20L, 5L, false, "2026-07-31T12:01:00Z");
+        CommentRelation featured = relation(10L, 100L, false, "2026-07-31T12:00:00Z");
+        when(hotCache.getHotCommentIds(42L, 3, 10L)).thenReturn(List.of());
+        when(relations.findTopHotVisible(eq(42L), eq(10L), any(Pageable.class))).thenReturn(List.of(featured));
+        when(relations.findVisibleByVideoAfterCursor(eq(42L), any(), any(), any(Pageable.class)))
+                .thenReturn(List.of(normal, featured), List.of());
+        when(contents.findAllById(any())).thenReturn(List.of(content(10L, "featured"), content(20L, "normal")));
+
+        var response = service.getVideoComments(42L, null, 1, null);
+
+        assertThat(response.comments()).extracting(comment -> comment.commentId()).containsExactly(20L);
+        assertThat(response.nextCursor()).isNull();
+    }
+
+    @Test
     void preservesNanosecondPrecisionWhenAdvancingCursor() {
         CommentQueryService service = service();
         Instant preciseTime = Instant.parse("2026-07-31T12:00:00.123456789Z");

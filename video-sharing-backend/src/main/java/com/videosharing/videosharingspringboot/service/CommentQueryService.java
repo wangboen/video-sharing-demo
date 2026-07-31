@@ -98,11 +98,8 @@ public class CommentQueryService {
 
                 normal.add(relation);
                 if (normal.size() == pageSize) {
-                    boolean hasNext = index + 1 < batch.size();
-                    if (!hasNext && batch.size() == batchSize) {
-                        hasNext = !relations.findVisibleByVideoAfterCursor(videoId, nextQueryCursor.createdAt(),
-                                nextQueryCursor.commentId(), PageRequest.of(0, 1)).isEmpty();
-                    }
+                    boolean hasNext = hasAdditionalNormalComment(videoId, nextQueryCursor, batch, index + 1,
+                            batchSize, featuredIds);
                     return new NormalPage(normal, hasNext ? nextQueryCursor.format() : null);
                 }
             }
@@ -110,6 +107,27 @@ public class CommentQueryService {
             if (batch.size() < batchSize) return new NormalPage(normal, null);
         }
         return new NormalPage(normal, null);
+    }
+
+    private boolean hasAdditionalNormalComment(Long videoId, Cursor cursor, List<CommentRelation> batch,
+                                               int nextIndex, int batchSize, Set<Long> featuredIds) {
+        Cursor lookAheadCursor = cursor;
+        List<CommentRelation> lookAheadBatch = batch;
+        int index = nextIndex;
+
+        while (true) {
+            for (; index < lookAheadBatch.size(); index++) {
+                CommentRelation relation = lookAheadBatch.get(index);
+                lookAheadCursor = Cursor.from(relation);
+                if (!featuredIds.contains(relation.getCommentId())) return true;
+            }
+            if (lookAheadBatch.size() < batchSize) return false;
+
+            lookAheadBatch = relations.findVisibleByVideoAfterCursor(videoId, lookAheadCursor.createdAt(),
+                    lookAheadCursor.commentId(), PageRequest.of(0, batchSize));
+            if (lookAheadBatch.isEmpty()) return false;
+            index = 0;
+        }
     }
 
     private Map<Long, CommentContentDocument> contentById(Collection<CommentRelation> comments) {
