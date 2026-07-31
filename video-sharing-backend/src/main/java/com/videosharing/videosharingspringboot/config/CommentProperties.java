@@ -11,6 +11,7 @@ public class CommentProperties {
     private int pageSizeDefault = 20;
     private int pageSizeMax = 50;
     private int maxLength = 1000;
+    private long snowflakeWorkerId = 1;
     private int hotRefreshBatchSize = 500;
     private long hotCacheTtlSeconds = 60;
 
@@ -24,6 +25,8 @@ public class CommentProperties {
     public void setPageSizeMax(int pageSizeMax) { this.pageSizeMax = pageSizeMax; }
     public int getMaxLength() { return maxLength; }
     public void setMaxLength(int maxLength) { this.maxLength = maxLength; }
+    public long getSnowflakeWorkerId() { return snowflakeWorkerId; }
+    public void setSnowflakeWorkerId(long snowflakeWorkerId) { this.snowflakeWorkerId = snowflakeWorkerId; }
     public int getHotRefreshBatchSize() { return hotRefreshBatchSize; }
     public void setHotRefreshBatchSize(int hotRefreshBatchSize) { this.hotRefreshBatchSize = hotRefreshBatchSize; }
     public long getHotCacheTtlSeconds() { return hotCacheTtlSeconds; }
