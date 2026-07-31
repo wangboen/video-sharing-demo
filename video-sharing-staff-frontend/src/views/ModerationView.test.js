@@ -35,6 +35,12 @@ const task = {
   thumbnailUrl: 'http://minio.local/download/pending/users/9/session/thumbnail/cover.png?X-Amz-Signature=def',
 }
 
+const queueItem = {
+  ...task,
+  videoUrl: null,
+  thumbnailUrl: null,
+}
+
 function deferred() {
   let resolve
   let reject
@@ -64,6 +70,38 @@ describe('moderation claim workbench', () => {
     })
   })
 
+  it('loads a generated queue and claims the selected video', async () => {
+    mocks.get.mockResolvedValueOnce({ status: 200, data: [queueItem] })
+    mocks.post.mockResolvedValueOnce({ status: 200, data: task })
+    const wrapper = mount(ModerationView)
+
+    await flushPromises()
+    expect(mocks.get).toHaveBeenCalledWith('/api/moderation/videos/queue', { params: { limit: 20 } })
+    expect(wrapper.text()).toContain(task.title)
+
+    await wrapper.get('[data-test="queue-item-42"]').trigger('click')
+    await flushPromises()
+
+    expect(mocks.post).toHaveBeenCalledWith('/api/moderation/videos/42/claim')
+    expect(wrapper.get('video').attributes('src')).toBe(task.videoUrl)
+  })
+
+  it('refreshes the queue when the selected video was already claimed elsewhere', async () => {
+    mocks.get
+      .mockResolvedValueOnce({ status: 200, data: [queueItem] })
+      .mockResolvedValueOnce({ status: 200, data: [] })
+    mocks.post.mockRejectedValueOnce({ response: { status: 409 } })
+    const wrapper = mount(ModerationView)
+
+    await flushPromises()
+    await wrapper.get('[data-test="queue-item-42"]').trigger('click')
+    await flushPromises()
+
+    expect(wrapper.get('[role="alert"]').text()).toContain('已被其他审核员领取')
+    expect(mocks.get).toHaveBeenCalledTimes(2)
+    expect(wrapper.find('[data-test="queue-item-42"]').exists()).toBe(false)
+  })
+
   it('claims once, renders full metadata, and uses presigned moderation preview urls', async () => {
     let resolveClaim
     mocks.post.mockReturnValueOnce(new Promise((resolve) => { resolveClaim = resolve }))
@@ -83,7 +121,6 @@ describe('moderation claim workbench', () => {
     expect(wrapper.text()).toContain('版本 4')
     expect(wrapper.text()).toContain('领取时间')
     expect(wrapper.text()).toContain('租约到期')
-    expect(mocks.get).not.toHaveBeenCalled()
     expect(mocks.createUrl).not.toHaveBeenCalled()
     expect(wrapper.get('video').attributes('src')).toBe(task.videoUrl)
     expect(wrapper.get('video').attributes('poster')).toBe(task.thumbnailUrl)
@@ -98,7 +135,7 @@ describe('moderation claim workbench', () => {
     await wrapper.get('[data-test="claim"]').trigger('click')
     await flushPromises()
     expect(wrapper.get('[data-test="empty"]').text()).toContain('当前没有待审核视频')
-    expect(wrapper.get('[data-test="empty"]').text()).toContain('稍后再次领取')
+    expect(wrapper.get('[data-test="empty"]').text()).toContain('稍后刷新队列或再次领取')
 
     await wrapper.get('[data-test="claim"]').trigger('click')
     await flushPromises()
@@ -109,7 +146,6 @@ describe('moderation claim workbench', () => {
   it('omits the poster when the task has no thumbnail url', async () => {
     const wrapper = await mountClaimed({ hasThumbnail: false, thumbnailUrl: null })
 
-    expect(mocks.get).not.toHaveBeenCalled()
     expect(wrapper.get('video').attributes('src')).toBe(task.videoUrl)
     expect(wrapper.get('video').attributes('poster')).toBeUndefined()
 
