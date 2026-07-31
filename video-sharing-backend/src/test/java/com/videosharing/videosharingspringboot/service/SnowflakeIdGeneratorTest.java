@@ -12,7 +12,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 class SnowflakeIdGeneratorTest {
 
     @Test
-    void generatesTenThousandUniqueMostlyIncreasingIds() {
+    void generatesTenThousandUniqueStrictlyIncreasingIds() {
         SnowflakeIdGenerator generator = new SnowflakeIdGenerator(1);
 
         List<Long> ids = IntStream.range(0, 10_000)
@@ -20,11 +20,8 @@ class SnowflakeIdGeneratorTest {
                 .toList();
 
         Set<Long> uniqueIds = new HashSet<>(ids);
-        long increasingPairs = IntStream.range(1, ids.size())
-                .filter(index -> ids.get(index) > ids.get(index - 1))
-                .count();
-
         assertThat(uniqueIds).hasSize(10_000);
-        assertThat(increasingPairs).isGreaterThan(9_990);
+        assertThat(ids).isSorted();
+        assertThat(ids).doesNotHaveDuplicates();
     }
 }
