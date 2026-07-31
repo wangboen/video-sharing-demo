@@ -18,6 +18,7 @@ import org.springframework.stereotype.Service;
 
 import java.time.Instant;
 import java.util.Collection;
+import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
@@ -57,16 +58,12 @@ public class CommentQueryService {
         int pageSize = normalizeSize(requestedSize);
         List<CommentRelation> featured = featuredRelations(videoId);
         Set<Long> featuredIds = featured.stream().map(CommentRelation::getCommentId).collect(java.util.stream.Collectors.toSet());
-        Cursor before = Cursor.parse(cursor);
-        List<CommentRelation> indexed = relations.findVisibleByVideoAfterCursor(videoId, before.createdAt(), before.commentId(),
-                PageRequest.of(0, pageSize + 1));
-        boolean hasNext = indexed.size() > pageSize;
-        List<CommentRelation> normal = indexed.stream().limit(pageSize)
-                .filter(comment -> !featuredIds.contains(comment.getCommentId())).toList();
+        NormalPage normalPage = normalRelations(videoId, Cursor.parse(cursor), pageSize, featuredIds);
+        List<CommentRelation> normal = normalPage.comments();
         List<CommentRelation> all = combine(featured, normal);
         Map<Long, CommentContentDocument> contentById = contentById(all);
         Set<Long> likedIds = likedCommentIds(all, userId);
-        String nextCursor = hasNext ? formatCursor(indexed.get(pageSize - 1)) : null;
+        String nextCursor = normalPage.nextCursor();
         return new VideoCommentsResponse(responses(featured, contentById, likedIds), responses(normal, contentById, likedIds), nextCursor);
     }
 
@@ -82,6 +79,37 @@ public class CommentQueryService {
         Map<Long, CommentRelation> relationById = new HashMap<>();
         relations.findAllById(cachedIds).forEach(relation -> relationById.put(relation.getCommentId(), relation));
         return cachedIds.stream().map(relationById::get).filter(java.util.Objects::nonNull).toList();
+    }
+
+    private NormalPage normalRelations(Long videoId, Cursor cursor, int pageSize, Set<Long> featuredIds) {
+        List<CommentRelation> normal = new ArrayList<>();
+        Cursor nextQueryCursor = cursor;
+        int batchSize = pageSize + 1;
+
+        while (normal.size() < pageSize) {
+            List<CommentRelation> batch = relations.findVisibleByVideoAfterCursor(videoId, nextQueryCursor.createdAt(),
+                    nextQueryCursor.commentId(), PageRequest.of(0, batchSize));
+            if (batch.isEmpty()) return new NormalPage(normal, null);
+
+            for (int index = 0; index < batch.size(); index++) {
+                CommentRelation relation = batch.get(index);
+                nextQueryCursor = Cursor.from(relation);
+                if (featuredIds.contains(relation.getCommentId())) continue;
+
+                normal.add(relation);
+                if (normal.size() == pageSize) {
+                    boolean hasNext = index + 1 < batch.size();
+                    if (!hasNext && batch.size() == batchSize) {
+                        hasNext = !relations.findVisibleByVideoAfterCursor(videoId, nextQueryCursor.createdAt(),
+                                nextQueryCursor.commentId(), PageRequest.of(0, 1)).isEmpty();
+                    }
+                    return new NormalPage(normal, hasNext ? nextQueryCursor.format() : null);
+                }
+            }
+
+            if (batch.size() < batchSize) return new NormalPage(normal, null);
+        }
+        return new NormalPage(normal, null);
     }
 
     private Map<Long, CommentContentDocument> contentById(Collection<CommentRelation> comments) {
@@ -119,10 +147,6 @@ public class CommentQueryService {
         return Math.max(1, Math.min(size == null ? properties.getPageSizeDefault() : size, properties.getPageSizeMax()));
     }
 
-    private String formatCursor(CommentRelation relation) {
-        return relation.getCreatedAt().toEpochMilli() + ":" + relation.getCommentId();
-    }
-
     private CommentCommandStatusResponse statusResponse(CommentCommandStatus status) {
         return new CommentCommandStatusResponse(status.getRequestId(), status.getCommentId(), status.getStatus(), status.getFailureReason());
     }
@@ -135,15 +159,26 @@ public class CommentQueryService {
     }
 
     private record Cursor(Instant createdAt, Long commentId) {
+        private static Cursor from(CommentRelation relation) {
+            return new Cursor(relation.getCreatedAt(), relation.getCommentId());
+        }
+
+        private String format() {
+            return createdAt + "|" + commentId;
+        }
+
         private static Cursor parse(String value) {
             if (value == null || value.isBlank()) return new Cursor(Instant.MAX, Long.MAX_VALUE);
-            String[] parts = value.split(":", -1);
-            if (parts.length != 2) throw new IllegalArgumentException("Invalid comment cursor");
+            int separator = value.lastIndexOf('|');
+            if (separator < 1 || separator == value.length() - 1) throw new IllegalArgumentException("Invalid comment cursor");
             try {
-                return new Cursor(Instant.ofEpochMilli(Long.parseLong(parts[0])), Long.parseLong(parts[1]));
-            } catch (NumberFormatException exception) {
+                return new Cursor(Instant.parse(value.substring(0, separator)), Long.parseLong(value.substring(separator + 1)));
+            } catch (NumberFormatException | java.time.format.DateTimeParseException exception) {
                 throw new IllegalArgumentException("Invalid comment cursor");
             }
         }
+    }
+
+    private record NormalPage(List<CommentRelation> comments, String nextCursor) {
     }
 }

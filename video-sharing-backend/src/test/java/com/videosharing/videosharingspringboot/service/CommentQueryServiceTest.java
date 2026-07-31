@@ -2,16 +2,12 @@ package com.videosharing.videosharingspringboot.service;
 
 import com.videosharing.videosharingspringboot.config.CommentProperties;
 import com.videosharing.videosharingspringboot.model.CommentContentDocument;
-import com.videosharing.videosharingspringboot.model.CommentLike;
-import com.videosharing.videosharingspringboot.model.CommentLikeId;
 import com.videosharing.videosharingspringboot.model.CommentRelation;
-import com.videosharing.videosharingspringboot.model.User;
 import com.videosharing.videosharingspringboot.repository.CommentContentRepository;
 import com.videosharing.videosharingspringboot.repository.CommentLikeRepository;
 import com.videosharing.videosharingspringboot.repository.CommentRelationRepository;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
-import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.data.domain.Pageable;
@@ -22,6 +18,8 @@ import java.util.List;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.times;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 @ExtendWith(MockitoExtension.class)
@@ -33,8 +31,7 @@ class CommentQueryServiceTest {
 
     @Test
     void composesFeaturedAndNormalCommentsInMysqlOrder() {
-        CommentProperties properties = properties();
-        CommentQueryService service = new CommentQueryService(relations, contents, likes, hotCache, properties);
+        CommentQueryService service = service();
         CommentRelation featured = relation(10L, 100L, false, "2026-07-31T12:00:00Z");
         CommentRelation duplicateFeatured = relation(10L, 100L, false, "2026-07-31T12:00:00Z");
         CommentRelation newestNormal = relation(30L, 5L, false, "2026-07-31T11:00:00Z");
@@ -57,13 +54,11 @@ class CommentQueryServiceTest {
 
     @Test
     void displaysAnonymizedCommentsWithoutExposingUserId() {
-        CommentProperties properties = properties();
-        CommentQueryService service = new CommentQueryService(relations, contents, likes, hotCache, properties);
+        CommentQueryService service = service();
         CommentRelation anonymous = relation(10L, 3L, true, "2026-07-31T12:00:00Z");
         when(hotCache.getHotCommentIds(42L, 3, 10L)).thenReturn(List.of());
         when(relations.findTopHotVisible(eq(42L), eq(10L), any(Pageable.class))).thenReturn(List.of());
-        when(relations.findVisibleByVideoAfterCursor(eq(42L), any(), any(), any(Pageable.class)))
-                .thenReturn(List.of(anonymous));
+        when(relations.findVisibleByVideoAfterCursor(eq(42L), any(), any(), any(Pageable.class))).thenReturn(List.of(anonymous));
         when(contents.findAllById(List.of(10L))).thenReturn(List.of(content(10L, "alice")));
 
         var response = service.getVideoComments(42L, null, 20, null);
@@ -75,6 +70,53 @@ class CommentQueryServiceTest {
         assertThat(response.comments().get(0).getClass().getRecordComponents())
                 .extracting(component -> component.getName())
                 .doesNotContain("userId");
+    }
+
+    @Test
+    void fillsNormalPageAfterSkippingFeaturedRowsInTimeIndex() {
+        CommentQueryService service = service();
+        CommentRelation featuredOne = relation(10L, 100L, false, "2026-07-31T12:03:00Z");
+        CommentRelation featuredTwo = relation(11L, 90L, false, "2026-07-31T12:02:00Z");
+        CommentRelation firstNormal = relation(20L, 5L, false, "2026-07-31T12:01:00Z");
+        CommentRelation secondNormal = relation(21L, 4L, false, "2026-07-31T12:00:00Z");
+        CommentRelation remainingNormal = relation(22L, 3L, false, "2026-07-31T11:59:00Z");
+        when(hotCache.getHotCommentIds(42L, 3, 10L)).thenReturn(List.of());
+        when(relations.findTopHotVisible(eq(42L), eq(10L), any(Pageable.class)))
+                .thenReturn(List.of(featuredOne, featuredTwo));
+        when(relations.findVisibleByVideoAfterCursor(eq(42L), any(), any(), any(Pageable.class)))
+                .thenReturn(List.of(featuredOne, featuredTwo, firstNormal), List.of(secondNormal, remainingNormal));
+        when(contents.findAllById(any())).thenReturn(List.of(content(10L, "featured-one"), content(11L, "featured-two"),
+                content(20L, "first"), content(21L, "second")));
+
+        var response = service.getVideoComments(42L, null, 2, null);
+
+        assertThat(response.comments()).extracting(comment -> comment.commentId()).containsExactly(20L, 21L);
+        assertThat(response.nextCursor()).isEqualTo("2026-07-31T12:00:00Z|21");
+        verify(relations, times(2)).findVisibleByVideoAfterCursor(eq(42L), any(), any(), any(Pageable.class));
+    }
+
+    @Test
+    void preservesNanosecondPrecisionWhenAdvancingCursor() {
+        CommentQueryService service = service();
+        Instant preciseTime = Instant.parse("2026-07-31T12:00:00.123456789Z");
+        CommentRelation first = relation(20L, 5L, false, preciseTime.toString());
+        CommentRelation second = relation(19L, 4L, false, "2026-07-31T12:00:00.123456788Z");
+        when(hotCache.getHotCommentIds(42L, 3, 10L)).thenReturn(List.of());
+        when(relations.findTopHotVisible(eq(42L), eq(10L), any(Pageable.class))).thenReturn(List.of());
+        when(relations.findVisibleByVideoAfterCursor(eq(42L), any(), any(), any(Pageable.class)))
+                .thenReturn(List.of(first, second), List.of());
+        when(contents.findAllById(List.of(20L))).thenReturn(List.of(content(20L, "first")));
+
+        var firstPage = service.getVideoComments(42L, null, 1, null);
+        service.getVideoComments(42L, firstPage.nextCursor(), 1, null);
+
+        org.mockito.ArgumentCaptor<Instant> cursors = org.mockito.ArgumentCaptor.forClass(Instant.class);
+        verify(relations, times(2)).findVisibleByVideoAfterCursor(eq(42L), cursors.capture(), any(), any(Pageable.class));
+        assertThat(cursors.getAllValues().get(1)).isEqualTo(preciseTime);
+    }
+
+    private CommentQueryService service() {
+        return new CommentQueryService(relations, contents, likes, hotCache, properties());
     }
 
     private CommentProperties properties() {
