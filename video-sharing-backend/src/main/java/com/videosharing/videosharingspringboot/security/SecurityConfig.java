@@ -42,13 +42,15 @@ public class SecurityConfig {
                 .authorizeHttpRequests(authorize -> authorize
                         .requestMatchers(HttpMethod.OPTIONS, "/**").permitAll()
                         .requestMatchers("/api/auth/register", "/api/auth/login", "/api/staff/auth/login").permitAll()
-                        .requestMatchers(HttpMethod.GET, "/api/videos").permitAll()
+                        .requestMatchers(HttpMethod.GET, "/api/videos", "/api/videos/*/comments",
+                                "/api/comments/commands/*").permitAll()
                         .requestMatchers("/api/admin/**").hasRole("ADMIN")
                         .requestMatchers("/api/moderation/**").hasAnyRole("REVIEWER", "ADMIN")
                         .requestMatchers("/api/videos/upload-session", "/api/videos/upload-complete",
                                 "/api/videos/upload-cancel", "/api/users/me/videos",
                                 "/api/users/me/videos/*/download/video",
-                                "/api/users/me/videos/*/download/thumbnail").hasRole("USER")
+                                "/api/users/me/videos/*/download/thumbnail",
+                                "/api/videos/*/comments").hasRole("USER")
                         .anyRequest().authenticated())
                 .addFilterBefore(jwtAuthenticationFilter, UsernamePasswordAuthenticationFilter.class)
                 .build();
