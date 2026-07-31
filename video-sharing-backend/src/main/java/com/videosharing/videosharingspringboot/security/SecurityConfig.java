@@ -50,6 +50,7 @@ public class SecurityConfig {
                                 "/api/videos/upload-cancel", "/api/users/me/videos",
                                 "/api/users/me/videos/*/download/video",
                                 "/api/users/me/videos/*/download/thumbnail",
+                                "/api/users/me/comments", "/api/users/me/comments/*",
                                 "/api/videos/*/comments").hasRole("USER")
                         .anyRequest().authenticated())
                 .addFilterBefore(jwtAuthenticationFilter, UsernamePasswordAuthenticationFilter.class)

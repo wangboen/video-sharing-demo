@@ -7,6 +7,7 @@ import com.videosharing.videosharingspringboot.dto.VideoCommentsResponse;
 import com.videosharing.videosharingspringboot.model.User;
 import com.videosharing.videosharingspringboot.service.CommentCommandService;
 import com.videosharing.videosharingspringboot.service.CommentQueryService;
+import com.videosharing.videosharingspringboot.service.UserCommentService;
 import com.videosharing.videosharingspringboot.service.UserService;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -28,11 +29,12 @@ import static org.mockito.Mockito.when;
 class CommentControllerTest {
     @Mock private CommentCommandService commands;
     @Mock private CommentQueryService queries;
+    @Mock private UserCommentService userComments;
     @Mock private UserService users;
 
     @Test
     void publishesCommentAsAcceptedForAuthenticatedUser() {
-        CommentController controller = new CommentController(commands, queries, users);
+        CommentController controller = new CommentController(commands, queries, userComments, users);
         User user = new User();
         user.setId(7L);
         when(users.findByUsername("alice")).thenReturn(Optional.of(user));
@@ -49,7 +51,7 @@ class CommentControllerTest {
 
     @Test
     void returnsPublicCommentsWithoutAUser() {
-        CommentController controller = new CommentController(commands, queries, users);
+        CommentController controller = new CommentController(commands, queries, userComments, users);
         VideoCommentsResponse page = new VideoCommentsResponse(List.of(), List.of(), null);
         when(queries.getVideoComments(42L, null, 20, null)).thenReturn(page);
 
@@ -61,7 +63,7 @@ class CommentControllerTest {
 
     @Test
     void treatsAnonymousAuthenticationAsAPublicCommentRequest() {
-        CommentController controller = new CommentController(commands, queries, users);
+        CommentController controller = new CommentController(commands, queries, userComments, users);
         VideoCommentsResponse page = new VideoCommentsResponse(List.of(), List.of(), null);
         when(queries.getVideoComments(42L, null, 20, null)).thenReturn(page);
         Authentication anonymous = new AnonymousAuthenticationToken("key", "anonymousUser",
@@ -75,7 +77,7 @@ class CommentControllerTest {
 
     @Test
     void returnsCommandStatusWhenPresent() {
-        CommentController controller = new CommentController(commands, queries, users);
+        CommentController controller = new CommentController(commands, queries, userComments, users);
         when(queries.getCommandStatus("request-1"))
                 .thenReturn(Optional.of(new CommentCommandStatusResponse("request-1", 99L, "ACCEPTED", null)));
 

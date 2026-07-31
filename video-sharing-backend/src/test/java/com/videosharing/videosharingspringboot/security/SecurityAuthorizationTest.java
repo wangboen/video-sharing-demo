@@ -11,6 +11,7 @@ import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.RestController;
 
 import jakarta.servlet.FilterChain;
@@ -20,6 +21,7 @@ import static org.mockito.Mockito.doAnswer;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.user;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 @WebMvcTest(controllers = SecurityAuthorizationTest.ProbeController.class)
@@ -58,6 +60,14 @@ class SecurityAuthorizationTest {
         mvc.perform(get("/api/users/me/videos/10/download/thumbnail").with(user("creator").roles("USER")))
                 .andExpect(status().isOk());
         mvc.perform(get("/api/users/me/videos/10/download/thumbnail").with(user("admin").roles("ADMIN")))
+                .andExpect(status().isForbidden());
+        mvc.perform(get("/api/users/me/comments").with(user("creator").roles("USER")))
+                .andExpect(status().isOk());
+        mvc.perform(get("/api/users/me/comments").with(user("reviewer").roles("REVIEWER")))
+                .andExpect(status().isForbidden());
+        mvc.perform(delete("/api/users/me/comments/10").with(user("creator").roles("USER")))
+                .andExpect(status().isOk());
+        mvc.perform(delete("/api/users/me/comments/10").with(user("admin").roles("ADMIN")))
                 .andExpect(status().isForbidden());
     }
 
@@ -115,6 +125,16 @@ class SecurityAuthorizationTest {
 
         @GetMapping("/api/users/me/videos/{id}/download/thumbnail")
         ResponseEntity<Void> downloadThumbnail() {
+            return ResponseEntity.ok().build();
+        }
+
+        @GetMapping("/api/users/me/comments")
+        ResponseEntity<Void> comments() {
+            return ResponseEntity.ok().build();
+        }
+
+        @DeleteMapping("/api/users/me/comments/{id}")
+        ResponseEntity<Void> comment(@PathVariable Long id) {
             return ResponseEntity.ok().build();
         }
 
