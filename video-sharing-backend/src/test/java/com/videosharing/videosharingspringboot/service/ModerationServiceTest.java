@@ -1,6 +1,7 @@
 package com.videosharing.videosharingspringboot.service;
 
 import com.videosharing.videosharingspringboot.dto.ModerationDecisionRequest;
+import com.videosharing.videosharingspringboot.dto.ModerationVideoResponse;
 import com.videosharing.videosharingspringboot.model.Role;
 import com.videosharing.videosharingspringboot.model.StaffAccount;
 import com.videosharing.videosharingspringboot.model.User;
@@ -112,6 +113,44 @@ class ModerationServiceTest {
         assertEquals(10L, claimed.id());
         assertEquals(reviewer, oldest.getLeaseOwner());
         assertEquals(now.plusSeconds(15 * 60), oldest.getLeaseExpiresAt());
+    }
+
+    @Test
+    void queueListsOwnActiveLeaseBeforeClaimableVideosWithoutPreviewUrls() {
+        Video leased = pending(10L);
+        leased.setLeaseOwner(reviewer);
+        leased.setClaimedAt(now.minusSeconds(30));
+        leased.setLeaseExpiresAt(now.plusSeconds(60));
+        leased.setFilePath("pending/users/9/session/video/leased.mp4");
+        Video older = pending(11L);
+        older.setUploadDate(LocalDateTime.of(2026, 7, 24, 9, 0));
+        older.setFilePath("pending/users/9/session/video/older.mp4");
+        Video newer = pending(12L);
+        newer.setUploadDate(LocalDateTime.of(2026, 7, 24, 10, 0));
+        newer.setFilePath("pending/users/9/session/video/newer.mp4");
+
+        when(staffAccounts.findByUsername("reviewer")).thenReturn(Optional.of(reviewer));
+        when(videos.findActiveLeaseForOwner(1L, VideoStatus.PENDING, now)).thenReturn(Optional.of(leased));
+        when(videos.findClaimable(VideoStatus.PENDING, now, PageRequest.of(0, 19)))
+                .thenReturn(List.of(older, newer));
+
+        var queue = service.queue("reviewer", 20);
+
+        assertEquals(List.of(10L, 11L, 12L), queue.stream().map(ModerationVideoResponse::id).toList());
+        assertEquals(now, queue.get(0).leaseExpiresAt().minusSeconds(60));
+        assertTrue(queue.stream().allMatch(item -> item.videoUrl() == null && item.thumbnailUrl() == null));
+    }
+
+    @Test
+    void claimByIdRejectsAnotherReviewersActiveLease() {
+        Video leased = pending(10L);
+        leased.setLeaseOwner(other);
+        leased.setLeaseExpiresAt(now.plusSeconds(60));
+
+        when(staffAccounts.findByUsernameForUpdate("reviewer")).thenReturn(Optional.of(reviewer));
+        when(videos.findByIdForUpdate(10L)).thenReturn(Optional.of(leased));
+
+        assertThrows(ModerationConflictException.class, () -> service.claim("reviewer", 10L));
     }
 
     @Test

@@ -64,3 +64,6 @@ CREATE INDEX idx_videos_user_upload_id
 
 CREATE INDEX idx_videos_reviewer_id
     ON videos (reviewer_id);
+
+CREATE INDEX idx_videos_reviewer_status_reviewed_id
+    ON videos (reviewer_id, status, reviewed_at, id);

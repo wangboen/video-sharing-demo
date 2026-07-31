@@ -142,11 +142,7 @@ public class ModerationService {
     @Transactional
     public Optional<ModerationVideoResponse> claimNext(String username) {
         Instant now = now();
-        StaffAccount owner = staffAccounts.findByUsernameForUpdate(username)
-                .orElseThrow(() -> new AccessDeniedException("Staff account not found"));
-        if (owner.getRole() != Role.REVIEWER && owner.getRole() != Role.ADMIN) {
-            throw new AccessDeniedException("Staff role required");
-        }
+        StaffAccount owner = requireStaffForUpdate(username);
 
         Optional<Video> existing = videos.findActiveLeaseForOwner(owner.getId(), VideoStatus.PENDING, now);
         if (existing.isPresent()) {
@@ -157,13 +153,43 @@ public class ModerationService {
         if (available.isEmpty()) {
             return Optional.empty();
         }
-        Video video = available.get(0);
-        video.setLeaseOwner(owner);
-        video.setClaimedAt(now);
-        video.setLeaseExpiresAt(now.plus(leaseDuration));
-        videos.save(video);
-        videos.flush();
-        return Optional.of(moderationResponse(video));
+        return Optional.of(lease(available.get(0), owner, now));
+    }
+
+    @Transactional(readOnly = true)
+    public List<ModerationVideoResponse> queue(String username, int limit) {
+        Instant now = now();
+        StaffAccount owner = requireStaff(username);
+        int normalizedLimit = normalizeQueueLimit(limit);
+        Optional<Video> activeLease = videos.findActiveLeaseForOwner(owner.getId(), VideoStatus.PENDING, now);
+        int claimableLimit = activeLease.isPresent() ? normalizedLimit - 1 : normalizedLimit;
+        List<ModerationVideoResponse> result = activeLease.stream()
+                .map(ModerationVideoResponse::from)
+                .collect(java.util.stream.Collectors.toCollection(java.util.ArrayList::new));
+        if (claimableLimit > 0) {
+            videos.findClaimable(VideoStatus.PENDING, now, PageRequest.of(0, claimableLimit)).stream()
+                    .map(ModerationVideoResponse::from)
+                    .forEach(result::add);
+        }
+        return result;
+    }
+
+    @Transactional
+    public ModerationVideoResponse claim(String username, Long id) {
+        Instant now = now();
+        StaffAccount owner = requireStaffForUpdate(username);
+        Video video = locked(id);
+        if (video.getStatus() != VideoStatus.PENDING) {
+            throw new ModerationConflictException("Video is not pending moderation");
+        }
+        if (video.getLeaseOwner() != null && video.getLeaseExpiresAt() != null
+                && video.getLeaseExpiresAt().isAfter(now)) {
+            if (video.getLeaseOwner().getUsername().equals(username)) {
+                return moderationResponse(video);
+            }
+            throw new ModerationConflictException("Video is already leased by another reviewer");
+        }
+        return lease(video, owner, now);
     }
 
     @Transactional
@@ -348,6 +374,35 @@ public class ModerationService {
                 .orElseThrow(() -> new ModerationConflictException("Video not found"));
     }
 
+    private StaffAccount requireStaff(String username) {
+        StaffAccount staff = staffAccounts.findByUsername(username)
+                .orElseThrow(() -> new AccessDeniedException("Staff account not found"));
+        assertStaffRole(staff);
+        return staff;
+    }
+
+    private StaffAccount requireStaffForUpdate(String username) {
+        StaffAccount staff = staffAccounts.findByUsernameForUpdate(username)
+                .orElseThrow(() -> new AccessDeniedException("Staff account not found"));
+        assertStaffRole(staff);
+        return staff;
+    }
+
+    private void assertStaffRole(StaffAccount staff) {
+        if (staff.getRole() != Role.REVIEWER && staff.getRole() != Role.ADMIN) {
+            throw new AccessDeniedException("Staff role required");
+        }
+    }
+
+    private ModerationVideoResponse lease(Video video, StaffAccount owner, Instant now) {
+        video.setLeaseOwner(owner);
+        video.setClaimedAt(now);
+        video.setLeaseExpiresAt(now.plus(leaseDuration));
+        videos.save(video);
+        videos.flush();
+        return moderationResponse(video);
+    }
+
     private ModerationVideoResponse moderationResponse(Video video) {
         String videoUrl = presignedPreviewUrl(video.getFilePath());
         String thumbnailUrl = video.getThumbnailPath() == null ? null : presignedPreviewUrl(video.getThumbnailPath());
@@ -381,6 +436,13 @@ public class ModerationService {
 
     private Instant now() {
         return clock.instant();
+    }
+
+    private static int normalizeQueueLimit(int limit) {
+        if (limit < 1) {
+            return 20;
+        }
+        return Math.min(limit, 100);
     }
 
     private static Path normalize(Path path) {

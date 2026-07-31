@@ -9,6 +9,7 @@ import org.springframework.context.annotation.Import;
 import org.springframework.http.ResponseEntity;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RestController;
 
@@ -66,6 +67,10 @@ class SecurityAuthorizationTest {
                 .andExpect(status().isForbidden());
         mvc.perform(get("/api/admin/reviewers").with(user("admin").roles("ADMIN")))
                 .andExpect(status().isOk());
+        mvc.perform(get("/api/admin/reviewers/9/reviews").with(user("reviewer").roles("REVIEWER")))
+                .andExpect(status().isForbidden());
+        mvc.perform(get("/api/admin/reviewers/9/reviews").with(user("admin").roles("ADMIN")))
+                .andExpect(status().isOk());
     }
 
     @Test
@@ -75,6 +80,14 @@ class SecurityAuthorizationTest {
         mvc.perform(post("/api/moderation/videos/claim-next").with(user("reviewer").roles("REVIEWER")))
                 .andExpect(status().isOk());
         mvc.perform(post("/api/moderation/videos/claim-next").with(user("admin").roles("ADMIN")))
+                .andExpect(status().isOk());
+        mvc.perform(get("/api/moderation/videos/queue").with(user("creator").roles("USER")))
+                .andExpect(status().isForbidden());
+        mvc.perform(get("/api/moderation/videos/queue").with(user("reviewer").roles("REVIEWER")))
+                .andExpect(status().isOk());
+        mvc.perform(post("/api/moderation/videos/10/claim").with(user("creator").roles("USER")))
+                .andExpect(status().isForbidden());
+        mvc.perform(post("/api/moderation/videos/10/claim").with(user("admin").roles("ADMIN")))
                 .andExpect(status().isOk());
     }
 
@@ -110,8 +123,23 @@ class SecurityAuthorizationTest {
             return ResponseEntity.ok().build();
         }
 
+        @GetMapping("/api/admin/reviewers/{id}/reviews")
+        ResponseEntity<Void> reviewerReviews() {
+            return ResponseEntity.ok().build();
+        }
+
         @PostMapping("/api/moderation/videos/claim-next")
         ResponseEntity<Void> moderate() {
+            return ResponseEntity.ok().build();
+        }
+
+        @GetMapping("/api/moderation/videos/queue")
+        ResponseEntity<Void> queue() {
+            return ResponseEntity.ok().build();
+        }
+
+        @PostMapping("/api/moderation/videos/{id}/claim")
+        ResponseEntity<Void> claim(@PathVariable Long id) {
             return ResponseEntity.ok().build();
         }
     }
