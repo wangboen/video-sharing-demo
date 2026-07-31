@@ -10,6 +10,27 @@ import static org.assertj.core.api.Assertions.assertThat;
 class SchemaSqlTest {
 
     @Test
+    void schemaDefinesCommentRelationsLikesAndCommandStatus() throws IOException {
+        try (var stream = getClass().getResourceAsStream("/schema.sql")) {
+            assertThat(stream).isNotNull();
+            String schema = new String(stream.readAllBytes(), StandardCharsets.UTF_8)
+                    .toLowerCase()
+                    .replaceAll("\\s+", " ");
+
+            assertThat(schema)
+                    .contains("create table comment_relations")
+                    .contains("create index idx_comment_relations_time on comment_relations (video_id, status, created_at desc, comment_id desc)")
+                    .contains("create index idx_comment_relations_hot on comment_relations (video_id, status, like_count desc, created_at desc, comment_id desc)")
+                    .contains("create index idx_comment_relations_user on comment_relations (user_id, anonymized, created_at desc, comment_id desc)")
+                    .contains("create table comment_likes")
+                    .contains("primary key (comment_id, user_id)")
+                    .contains("create table comment_command_status")
+                    .contains("constraint uk_comment_command_status_comment unique (comment_id)")
+                    .contains("constraint chk_comment_command_status_status check (status in ('accepted', 'completed', 'failed'))");
+        }
+    }
+
+    @Test
     void freshSchemaSeparatesPublicUsersFromStaffAccounts() throws IOException {
         try (var stream = getClass().getResourceAsStream("/schema.sql")) {
             assertThat(stream).isNotNull();
