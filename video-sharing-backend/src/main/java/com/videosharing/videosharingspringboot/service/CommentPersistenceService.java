@@ -28,6 +28,7 @@ public class CommentPersistenceService {
 
     public void persistCreateCommand(CommentCreateCommand command) {
         if (relationRepository.existsById(command.commentId())) {
+            commandStatusRepository.save(completedStatus(command));
             return;
         }
 

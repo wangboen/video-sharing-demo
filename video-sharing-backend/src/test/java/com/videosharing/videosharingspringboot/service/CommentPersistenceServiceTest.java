@@ -20,6 +20,8 @@ import java.time.Instant;
 import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.inOrder;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
@@ -99,8 +101,37 @@ class CommentPersistenceServiceTest {
 
         verify(contentRepository, times(1)).save(org.mockito.ArgumentMatchers.any(CommentContentDocument.class));
         verify(relationRepository, times(1)).save(org.mockito.ArgumentMatchers.any(CommentRelation.class));
-        verify(commandStatusRepository, times(1)).save(org.mockito.ArgumentMatchers.any(CommentCommandStatus.class));
+        verify(commandStatusRepository, times(2)).save(org.mockito.ArgumentMatchers.any(CommentCommandStatus.class));
         verifyNoMoreInteractions(contentRepository, commandStatusRepository);
+    }
+
+    @Test
+    void persistCreateCommandCompletesStatusWhenRetryFindsExistingRelation() {
+        CommentCreateCommand command = command();
+        CommentCommandStatus acceptedStatus = new CommentCommandStatus();
+        acceptedStatus.setRequestId(command.requestId());
+        acceptedStatus.setCommentId(command.commentId());
+        acceptedStatus.setUserId(command.userId());
+        acceptedStatus.setStatus("ACCEPTED");
+        acceptedStatus.setCreatedAt(CREATED_AT);
+        acceptedStatus.setUpdatedAt(CREATED_AT);
+        when(relationRepository.existsById(command.commentId())).thenReturn(false, true);
+        when(commandStatusRepository.findById(command.requestId())).thenReturn(Optional.of(acceptedStatus));
+        when(commandStatusRepository.save(any(CommentCommandStatus.class)))
+                .thenThrow(new RuntimeException("status write failed"))
+                .thenAnswer(invocation -> invocation.getArgument(0));
+
+        assertThatThrownBy(() -> service.persistCreateCommand(command))
+                .isInstanceOf(RuntimeException.class)
+                .hasMessage("status write failed");
+
+        service.persistCreateCommand(command);
+
+        verify(contentRepository, times(1)).save(any(CommentContentDocument.class));
+        verify(relationRepository, times(1)).save(any(CommentRelation.class));
+        ArgumentCaptor<CommentCommandStatus> statusCaptor = ArgumentCaptor.forClass(CommentCommandStatus.class);
+        verify(commandStatusRepository, times(2)).save(statusCaptor.capture());
+        assertThat(statusCaptor.getAllValues().get(1).getStatus()).isEqualTo("COMPLETED");
     }
 
     private CommentCreateCommand command() {
