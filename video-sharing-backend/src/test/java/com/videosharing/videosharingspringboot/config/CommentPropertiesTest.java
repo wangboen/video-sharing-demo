@@ -15,7 +15,8 @@ class CommentPropertiesTest {
                     "comments.page-size-default=15",
                     "comments.page-size-max=40",
                     "comments.max-length=800",
-                    "comments.hot-refresh-batch-size=250"
+                    "comments.hot-refresh-batch-size=250",
+                    "comments.hot-cache-ttl-seconds=120"
             );
 
     @Test
@@ -28,6 +29,7 @@ class CommentPropertiesTest {
             assertThat(properties.getPageSizeMax()).isEqualTo(40);
             assertThat(properties.getMaxLength()).isEqualTo(800);
             assertThat(properties.getHotRefreshBatchSize()).isEqualTo(250);
+            assertThat(properties.getHotCacheTtlSeconds()).isEqualTo(120);
         });
     }
 

@@ -1,7 +1,9 @@
 package com.videosharing.videosharingspringboot.config;
 
 import org.springframework.boot.context.properties.ConfigurationProperties;
+import org.springframework.stereotype.Component;
 
+@Component
 @ConfigurationProperties(prefix = "comments")
 public class CommentProperties {
     private int featuredLimit = 3;
