@@ -17,13 +17,16 @@ public class CommentPersistenceService {
     private final CommentContentRepository contentRepository;
     private final CommentRelationRepository relationRepository;
     private final CommentCommandStatusRepository commandStatusRepository;
+    private final HotCommentCacheService hotCache;
 
     public CommentPersistenceService(CommentContentRepository contentRepository,
                                      CommentRelationRepository relationRepository,
-                                     CommentCommandStatusRepository commandStatusRepository) {
+                                     CommentCommandStatusRepository commandStatusRepository,
+                                     HotCommentCacheService hotCache) {
         this.contentRepository = contentRepository;
         this.relationRepository = relationRepository;
         this.commandStatusRepository = commandStatusRepository;
+        this.hotCache = hotCache;
     }
 
     public void persistCreateCommand(CommentCreateCommand command) {
@@ -34,6 +37,7 @@ public class CommentPersistenceService {
 
         contentRepository.save(content(command));
         relationRepository.save(relation(command));
+        hotCache.markVideoForHotRefresh(command.videoId());
         commandStatusRepository.save(completedStatus(command));
     }
 

@@ -42,6 +42,9 @@ class CommentPersistenceServiceTest {
     @Mock
     private CommentCommandStatusRepository commandStatusRepository;
 
+    @Mock
+    private HotCommentCacheService hotCache;
+
     @InjectMocks
     private CommentPersistenceService service;
 
@@ -88,6 +91,7 @@ class CommentPersistenceServiceTest {
         CommentCommandStatus status = statusCaptor.getValue();
         assertThat(status.getStatus()).isEqualTo("COMPLETED");
         assertThat(status.getUpdatedAt()).isEqualTo(CREATED_AT);
+        verify(hotCache).markVideoForHotRefresh(command.videoId());
     }
 
     @Test
