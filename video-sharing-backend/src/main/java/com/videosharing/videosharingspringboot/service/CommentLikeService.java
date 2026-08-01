@@ -6,6 +6,7 @@ import com.videosharing.videosharingspringboot.model.CommentStatus;
 import com.videosharing.videosharingspringboot.model.User;
 import com.videosharing.videosharingspringboot.repository.CommentLikeRepository;
 import com.videosharing.videosharingspringboot.repository.CommentRelationRepository;
+import org.hibernate.exception.ConstraintViolationException;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -32,7 +33,10 @@ public class CommentLikeService {
         try {
             inserted = likes.insertIfAbsent(commentId, user.getId(), Instant.now());
         } catch (DataIntegrityViolationException exception) {
-            return;
+            if (isDuplicateLikeViolation(exception)) {
+                return;
+            }
+            throw exception;
         }
         if (inserted > 0 && relations.incrementVisibleLikeCount(commentId) > 0) {
             hotCache.markVideoForHotRefresh(relation.getVideoId());
@@ -60,6 +64,17 @@ public class CommentLikeService {
         id.setCommentId(commentId);
         id.setUserId(userId);
         return id;
+    }
+
+    private boolean isDuplicateLikeViolation(DataIntegrityViolationException exception) {
+        Throwable cause = exception;
+        while (cause != null) {
+            if (cause instanceof ConstraintViolationException constraintViolation) {
+                return "PRIMARY".equalsIgnoreCase(constraintViolation.getConstraintName());
+            }
+            cause = cause.getCause();
+        }
+        return false;
     }
 
     public static class CommentNotFoundException extends RuntimeException {

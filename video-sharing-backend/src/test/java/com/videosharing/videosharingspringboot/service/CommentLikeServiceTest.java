@@ -6,6 +6,7 @@ import com.videosharing.videosharingspringboot.model.CommentStatus;
 import com.videosharing.videosharingspringboot.model.User;
 import com.videosharing.videosharingspringboot.repository.CommentLikeRepository;
 import com.videosharing.videosharingspringboot.repository.CommentRelationRepository;
+import org.hibernate.exception.ConstraintViolationException;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
@@ -62,9 +63,26 @@ class CommentLikeServiceTest {
         CommentRelation relation = visibleRelation(101L, 42L, 5L);
         when(relations.findById(101L)).thenReturn(Optional.of(relation));
         when(likes.insertIfAbsent(eq(101L), eq(7L), any()))
-                .thenThrow(new DataIntegrityViolationException("duplicate like"));
+                .thenThrow(new DataIntegrityViolationException("duplicate like",
+                        new ConstraintViolationException("duplicate key", null, "PRIMARY")));
 
         service.like(user(7L), 101L);
+
+        verify(relations, never()).incrementVisibleLikeCount(101L);
+        verifyNoInteractions(hotCache);
+    }
+
+    @Test
+    void nonDuplicateLikeConstraintViolationSurfacesWithoutIncrementOrRefresh() {
+        CommentLikeService service = new CommentLikeService(relations, likes, hotCache);
+        CommentRelation relation = visibleRelation(101L, 42L, 5L);
+        DataIntegrityViolationException exception = new DataIntegrityViolationException("missing user",
+                new ConstraintViolationException("foreign key", null, "fk_comment_likes_user"));
+        when(relations.findById(101L)).thenReturn(Optional.of(relation));
+        when(likes.insertIfAbsent(eq(101L), eq(7L), any())).thenThrow(exception);
+
+        assertThatThrownBy(() -> service.like(user(7L), 101L))
+                .isSameAs(exception);
 
         verify(relations, never()).incrementVisibleLikeCount(101L);
         verifyNoInteractions(hotCache);
