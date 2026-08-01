@@ -10,6 +10,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.dao.DataIntegrityViolationException;
 
 import java.util.Optional;
 
@@ -52,6 +53,36 @@ class CommentLikeServiceTest {
         service.like(user(7L), 101L);
 
         verify(relations, never()).incrementVisibleLikeCount(101L);
+        verifyNoInteractions(hotCache);
+    }
+
+    @Test
+    void duplicateLikeConstraintViolationDoesNotIncrementMarkRefreshOrSurface() {
+        CommentLikeService service = new CommentLikeService(relations, likes, hotCache);
+        CommentRelation relation = visibleRelation(101L, 42L, 5L);
+        when(relations.findById(101L)).thenReturn(Optional.of(relation));
+        when(likes.insertIfAbsent(eq(101L), eq(7L), any()))
+                .thenThrow(new DataIntegrityViolationException("duplicate like"));
+
+        service.like(user(7L), 101L);
+
+        verify(relations, never()).incrementVisibleLikeCount(101L);
+        verifyNoInteractions(hotCache);
+    }
+
+    @Test
+    void relationIncrementConstraintViolationStillSurfaces() {
+        CommentLikeService service = new CommentLikeService(relations, likes, hotCache);
+        CommentRelation relation = visibleRelation(101L, 42L, 5L);
+        when(relations.findById(101L)).thenReturn(Optional.of(relation));
+        when(likes.insertIfAbsent(eq(101L), eq(7L), any())).thenReturn(1);
+        when(relations.incrementVisibleLikeCount(101L))
+                .thenThrow(new DataIntegrityViolationException("relation update failed"));
+
+        assertThatThrownBy(() -> service.like(user(7L), 101L))
+                .isInstanceOf(DataIntegrityViolationException.class)
+                .hasMessage("relation update failed");
+
         verifyNoInteractions(hotCache);
     }
 
