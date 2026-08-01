@@ -19,6 +19,8 @@ import org.springframework.transaction.TransactionDefinition;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.support.TransactionOperations;
 import org.springframework.transaction.support.TransactionTemplate;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
 import java.nio.file.Files;
@@ -34,6 +36,7 @@ import java.util.UUID;
 
 @Service
 public class ModerationService {
+    private static final Logger log = LoggerFactory.getLogger(ModerationService.class);
     private static final Duration STAFF_HEARTBEAT_INTERVAL = Duration.ofSeconds(60);
 
     private final VideoRepository videos;
@@ -45,6 +48,7 @@ public class ModerationService {
     private final TransactionOperations decisionTransactions;
     private final String pendingPrefix;
     private final String publicPrefix;
+    private final VideoSearchService videoSearch;
 
     @Autowired
     public ModerationService(VideoRepository videos,
@@ -55,10 +59,11 @@ public class ModerationService {
                               @Value("${object-storage.public-base-url:}") String objectStoragePublicBaseUrl,
                               @Value("${object-storage.pending-prefix:pending/}") String pendingPrefix,
                               @Value("${object-storage.public-prefix:public/}") String publicPrefix,
+                              VideoSearchService videoSearch,
                               PlatformTransactionManager transactionManager) {
         this(videos, staffAccounts, Duration.ofMinutes(leaseMinutes), Clock.systemUTC(),
                 decisionTransactionTemplate(transactionManager), objectStorage, Paths.get(objectValidationDir),
-                objectStoragePublicBaseUrl, pendingPrefix, publicPrefix);
+                objectStoragePublicBaseUrl, pendingPrefix, publicPrefix, videoSearch);
     }
 
     ModerationService(VideoRepository videos,
@@ -67,7 +72,7 @@ public class ModerationService {
                       Clock clock) {
         this(videos, staffAccounts, leaseDuration, clock, TransactionOperations.withoutTransaction(), null,
                 Paths.get(System.getProperty("java.io.tmpdir")).resolve("video-sharing-validation"), "",
-                "pending/", "public/");
+                "pending/", "public/", null);
     }
 
     ModerationService(VideoRepository videos,
@@ -77,7 +82,7 @@ public class ModerationService {
                       ObjectStorageService objectStorage,
                       Path objectValidationPath) {
         this(videos, staffAccounts, leaseDuration, clock, TransactionOperations.withoutTransaction(), objectStorage,
-                objectValidationPath, "", "pending/", "public/");
+                objectValidationPath, "", "pending/", "public/", null);
     }
 
     ModerationService(VideoRepository videos,
@@ -88,7 +93,19 @@ public class ModerationService {
                       Path objectValidationPath,
                       String objectStoragePublicBaseUrl) {
         this(videos, staffAccounts, leaseDuration, clock, TransactionOperations.withoutTransaction(), objectStorage,
-                objectValidationPath, objectStoragePublicBaseUrl, "pending/", "public/");
+                objectValidationPath, objectStoragePublicBaseUrl, "pending/", "public/", null);
+    }
+
+    ModerationService(VideoRepository videos,
+                      StaffAccountRepository staffAccounts,
+                      Duration leaseDuration,
+                      Clock clock,
+                      ObjectStorageService objectStorage,
+                      Path objectValidationPath,
+                      String objectStoragePublicBaseUrl,
+                      VideoSearchService videoSearch) {
+        this(videos, staffAccounts, leaseDuration, clock, TransactionOperations.withoutTransaction(), objectStorage,
+                objectValidationPath, objectStoragePublicBaseUrl, "pending/", "public/", videoSearch);
     }
 
     ModerationService(VideoRepository videos,
@@ -101,7 +118,7 @@ public class ModerationService {
                       String pendingPrefix,
                       String publicPrefix) {
         this(videos, staffAccounts, leaseDuration, clock, TransactionOperations.withoutTransaction(), objectStorage,
-                objectValidationPath, objectStoragePublicBaseUrl, pendingPrefix, publicPrefix);
+                objectValidationPath, objectStoragePublicBaseUrl, pendingPrefix, publicPrefix, null);
     }
 
     ModerationService(VideoRepository videos,
@@ -111,7 +128,7 @@ public class ModerationService {
                       TransactionOperations decisionTransactions) {
         this(videos, staffAccounts, leaseDuration, clock, decisionTransactions, null,
                 Paths.get(System.getProperty("java.io.tmpdir")).resolve("video-sharing-validation"), "",
-                "pending/", "public/");
+                "pending/", "public/", null);
     }
 
     ModerationService(VideoRepository videos,
@@ -124,6 +141,21 @@ public class ModerationService {
                       String objectStoragePublicBaseUrl,
                       String pendingPrefix,
                       String publicPrefix) {
+        this(videos, staffAccounts, leaseDuration, clock, decisionTransactions, objectStorage, objectValidationPath,
+                objectStoragePublicBaseUrl, pendingPrefix, publicPrefix, null);
+    }
+
+    ModerationService(VideoRepository videos,
+                      StaffAccountRepository staffAccounts,
+                      Duration leaseDuration,
+                      Clock clock,
+                      TransactionOperations decisionTransactions,
+                      ObjectStorageService objectStorage,
+                      Path objectValidationPath,
+                      String objectStoragePublicBaseUrl,
+                      String pendingPrefix,
+                      String publicPrefix,
+                      VideoSearchService videoSearch) {
         if (leaseDuration == null || leaseDuration.compareTo(STAFF_HEARTBEAT_INTERVAL) <= 0) {
             throw new IllegalArgumentException(
                     "Moderation lease duration must be greater than the 60-second staff heartbeat interval");
@@ -137,6 +169,7 @@ public class ModerationService {
         this.decisionTransactions = Objects.requireNonNull(decisionTransactions);
         this.pendingPrefix = normalizePrefix(pendingPrefix);
         this.publicPrefix = normalizePrefix(publicPrefix);
+        this.videoSearch = videoSearch;
     }
 
     @Transactional
@@ -262,7 +295,9 @@ public class ModerationService {
         String decision = request.decision().trim().toUpperCase();
         if ("REJECT".equals(decision)) {
             reject(video, request.reason());
-            return ModerationDecisionResponse.from(videos.save(video));
+            ModerationDecisionResponse response = ModerationDecisionResponse.from(videos.save(video));
+            deleteSearchIndex(video.getId());
+            return response;
         }
         if (!"APPROVE".equals(decision)) {
             throw new IllegalArgumentException("Decision must be APPROVE or REJECT");
@@ -322,6 +357,7 @@ public class ModerationService {
             video.setRejectionReason(null);
             clearLease(video);
             videos.saveAndFlush(video);
+            indexApproved(video);
         } catch (IOException exception) {
             throw new MediaPublicationFailure(exception);
         } finally {
@@ -345,6 +381,28 @@ public class ModerationService {
     private void deleteObject(String key) {
         if (objectStorage != null && key != null && !key.isBlank()) {
             objectStorage.delete(key);
+        }
+    }
+
+    private void indexApproved(Video video) {
+        if (videoSearch == null) {
+            return;
+        }
+        try {
+            videoSearch.indexApproved(video);
+        } catch (VideoSearchUnavailableException exception) {
+            log.warn("Could not index approved video {}", video.getId(), exception);
+        }
+    }
+
+    private void deleteSearchIndex(Long videoId) {
+        if (videoSearch == null) {
+            return;
+        }
+        try {
+            videoSearch.delete(videoId);
+        } catch (VideoSearchUnavailableException exception) {
+            log.warn("Could not delete video {} from search index", videoId, exception);
         }
     }
 

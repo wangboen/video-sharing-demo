@@ -9,8 +9,11 @@ import com.videosharing.videosharingspringboot.dto.PublicVideoResponse;
 import com.videosharing.videosharingspringboot.dto.VideoUploadResponse;
 import com.videosharing.videosharingspringboot.service.UserService;
 import com.videosharing.videosharingspringboot.service.VideoService;
+import com.videosharing.videosharingspringboot.service.VideoSearchUnavailableException;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.Authentication;
@@ -80,9 +83,35 @@ public class VideoController {
         return new ResponseEntity<>(videos, HttpStatus.OK);
     }
 
+    @GetMapping("/recommended")
+    public ResponseEntity<Page<PublicVideoResponse>> getRecommendedVideos(
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "12") int size) {
+        return ResponseEntity.ok(videoService.getRecommendedVideos(pageRequest(page, size))
+                .map(video -> PublicVideoResponse.from(video, objectStoragePublicBaseUrl)));
+    }
+
+    @GetMapping("/search")
+    public ResponseEntity<?> searchVideos(
+            @RequestParam(defaultValue = "") String q,
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "12") int size) {
+        try {
+            return ResponseEntity.ok(videoService.searchPublicVideos(q == null ? "" : q.trim(), pageRequest(page, size))
+                    .map(video -> PublicVideoResponse.from(video, objectStoragePublicBaseUrl)));
+        } catch (VideoSearchUnavailableException exception) {
+            return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE)
+                    .body("Video search is temporarily unavailable");
+        }
+    }
+
     private User currentUser(Authentication authentication) {
         return userService.findByUsername(authentication.getName())
                 .orElseThrow(() -> new RuntimeException("User not found"));
+    }
+
+    private static PageRequest pageRequest(int page, int size) {
+        return PageRequest.of(Math.max(page, 0), Math.max(1, Math.min(size, 50)));
     }
 
 }

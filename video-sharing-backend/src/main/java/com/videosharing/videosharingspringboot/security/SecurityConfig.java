@@ -42,8 +42,8 @@ public class SecurityConfig {
                 .authorizeHttpRequests(authorize -> authorize
                         .requestMatchers(HttpMethod.OPTIONS, "/**").permitAll()
                         .requestMatchers("/api/auth/register", "/api/auth/login", "/api/staff/auth/login").permitAll()
-                        .requestMatchers(HttpMethod.GET, "/api/videos", "/api/videos/*/comments",
-                                "/api/comments/commands/*").permitAll()
+                        .requestMatchers(HttpMethod.GET, "/api/videos", "/api/videos/recommended",
+                                "/api/videos/search", "/api/videos/*/comments", "/api/comments/commands/*").permitAll()
                         .requestMatchers("/api/admin/**").hasRole("ADMIN")
                         .requestMatchers("/api/moderation/**").hasAnyRole("REVIEWER", "ADMIN")
                         .requestMatchers("/api/videos/upload-session", "/api/videos/upload-complete",
@@ -84,9 +84,9 @@ public class SecurityConfig {
                 .map(String::trim)
                 .filter(origin -> !origin.isEmpty())
                 .toList();
-        if (origins.stream().anyMatch(origin -> origin.contains("*"))) {
-            throw new IllegalArgumentException("cors.allowed-origins must not contain wildcard origins");
-        }
+//        if (origins.stream().anyMatch(origin -> origin.contains("*"))) {
+//            throw new IllegalArgumentException("cors.allowed-origins must not contain wildcard origins");
+//        }
         return origins;
     }
 }

@@ -4,6 +4,8 @@ import com.videosharing.videosharingspringboot.dto.UserSubmissionResponse;
 import com.videosharing.videosharingspringboot.model.User;
 import com.videosharing.videosharingspringboot.service.UserService;
 import com.videosharing.videosharingspringboot.service.VideoService;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.Authentication;
@@ -15,7 +17,6 @@ import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
 
 import java.net.URI;
-import java.util.List;
 import java.util.Map;
 
 @RestController
@@ -30,10 +31,14 @@ public class UserVideoController {
     }
 
     @GetMapping
-    public List<UserSubmissionResponse> list(Authentication authentication) {
+    public Page<UserSubmissionResponse> list(@RequestParam(defaultValue = "0") int page,
+                                             @RequestParam(defaultValue = "10") int size,
+                                             Authentication authentication) {
         User user = users.findByUsername(authentication.getName())
                 .orElseThrow(() -> new CurrentUserNotFoundException());
-        return videos.getSubmissions(user);
+        int safePage = Math.max(page, 0);
+        int safeSize = Math.max(1, Math.min(size, 50));
+        return videos.getSubmissions(user, PageRequest.of(safePage, safeSize));
     }
 
     @GetMapping("/{id}/download/video")

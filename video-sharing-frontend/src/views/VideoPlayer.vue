@@ -5,6 +5,7 @@ import ErrorState from '../components/ErrorState.vue'
 import LoadingState from '../components/LoadingState.vue'
 import VideoListItem from '../components/VideoListItem.vue'
 import api from '../services/api'
+import { getStoredUser } from '../services/auth'
 import { formatDate, formatViews, getAuthorName, getThumbnailUrl, getVideoUrl } from '../utils/video'
 
 const route = useRoute()
@@ -16,12 +17,84 @@ const error = ref('')
 const recommendationsError = ref('')
 const liked = ref(false)
 const saved = ref(false)
+const featuredComments = ref([])
+const comments = ref([])
+const commentsCursor = ref('')
+const commentsLoading = ref(false)
+const commentDraft = ref('')
+const commentSubmitting = ref(false)
+const commentError = ref('')
+const currentUser = ref(getStoredUser())
 let latestRequestVersion = 0
+let latestCommentRequestVersion = 0
 
 const authorName = computed(() => getAuthorName(video.value) || '匿名创作者')
 const authorInitial = computed(() => authorName.value.trim().charAt(0).toUpperCase() || '视')
 const publishDate = computed(() => video.value?.createdAt ?? video.value?.uploadDate ?? video.value?.date)
 const authorBio = computed(() => video.value?.user?.bio || video.value?.user?.description || '这个创作者暂未留下简介。')
+
+function commentAuthor(comment) {
+  return comment.anonymized ? '匿名用户' : (comment.username || '匿名用户')
+}
+
+async function loadComments(reset = false) {
+  const videoId = route.params.id
+  if (!videoId || (!reset && commentsLoading.value)) return
+  const requestVersion = ++latestCommentRequestVersion
+  const isLatestRequest = () => requestVersion === latestCommentRequestVersion
+  commentsLoading.value = true
+  commentError.value = ''
+  if (reset) {
+    featuredComments.value = []
+    comments.value = []
+    commentsCursor.value = ''
+  }
+  try {
+    const response = commentsCursor.value && !reset
+      ? await api.get(`/api/videos/${videoId}/comments`, { params: { cursor: commentsCursor.value } })
+      : await api.get(`/api/videos/${videoId}/comments`)
+    if (!isLatestRequest() || String(route.params.id) !== String(videoId)) return
+    const data = response.data || {}
+    if (reset) featuredComments.value = Array.isArray(data.featured) ? data.featured : []
+    comments.value = reset ? (Array.isArray(data.comments) ? data.comments : []) : [...comments.value, ...(Array.isArray(data.comments) ? data.comments : [])]
+    commentsCursor.value = data.nextCursor || ''
+  } catch {
+    if (isLatestRequest()) commentError.value = '评论加载失败，请稍后重试。'
+  } finally {
+    if (isLatestRequest()) commentsLoading.value = false
+  }
+}
+
+async function submitComment() {
+  const content = commentDraft.value.trim()
+  if (!content || commentSubmitting.value) return
+  commentSubmitting.value = true
+  commentError.value = ''
+  try {
+    const response = await api.post(`/api/videos/${route.params.id}/comments`, { content })
+    comments.value.unshift({ commentId: response.data.commentId, username: currentUser.value?.username || '我', content, status: 'sending', likeCount: 0, likedByMe: false })
+    commentDraft.value = ''
+  } catch {
+    commentError.value = '评论发送失败，请稍后重试。'
+  } finally {
+    commentSubmitting.value = false
+  }
+}
+
+async function toggleCommentLike(comment) {
+  if (comment.status === 'sending') return
+  const previouslyLiked = Boolean(comment.likedByMe)
+  const previousCount = Number(comment.likeCount) || 0
+  comment.likedByMe = !previouslyLiked
+  comment.likeCount = Math.max(0, previousCount + (previouslyLiked ? -1 : 1))
+  try {
+    if (previouslyLiked) await api.delete(`/api/comments/${comment.commentId}/like`)
+    else await api.post(`/api/comments/${comment.commentId}/like`)
+  } catch {
+    comment.likedByMe = previouslyLiked
+    comment.likeCount = previousCount
+  }
+}
 
 async function loadRecommendations(requestVersion, videoId) {
   const isLatestRequest = () => requestVersion === latestRequestVersion
@@ -61,6 +134,11 @@ async function loadPage() {
     recommendationsError.value = ''
     liked.value = false
     saved.value = false
+    featuredComments.value = []
+    comments.value = []
+    commentsCursor.value = ''
+    commentDraft.value = ''
+    commentError.value = ''
   }
 
   try {
@@ -76,6 +154,7 @@ async function loadPage() {
     recommendations.value = list
       .filter((item) => String(item.id) !== String(videoId))
       .slice(0, 12)
+    loadComments(true)
   } catch {
     if (isLatestRequest()) error.value = 'Unable to load video.'
   } finally {
@@ -142,8 +221,14 @@ watch(() => route.params.id, loadPage, { immediate: true })
 
           <p v-if="video.description" class="video-description">{{ video.description }}</p>
         </section>
+        <section class="comments-section" aria-labelledby="comments-title">
+          <div class="comments-section__heading"><h2 id="comments-title">评论</h2><button v-if="commentError" type="button" @click="loadComments(true)">重新加载</button></div>
+          <p v-if="commentError" class="comments-error" role="alert">{{ commentError }}</p>
+          <div v-if="featuredComments.length" class="comments-group comments-group--featured"><h3>精选评论</h3><article v-for="comment in featuredComments" :key="comment.commentId" class="comment-item"><div class="comment-item__meta"><strong>{{ commentAuthor(comment) }}</strong><span>{{ formatDate(comment.createdAt) }}</span></div><p>{{ comment.content }}</p><button type="button" :aria-pressed="Boolean(comment.likedByMe)" @click="toggleCommentLike(comment)">点赞 {{ comment.likeCount || 0 }}</button></article></div>
+          <div class="comments-group"><h3>全部评论</h3><p v-if="!commentsLoading && !comments.length" class="comments-empty">还没有评论。</p><article v-for="comment in comments" :key="comment.commentId" class="comment-item" :class="{ 'comment-item--sending': comment.status === 'sending' }"><div class="comment-item__meta"><strong>{{ commentAuthor(comment) }}</strong><span>{{ comment.status === 'sending' ? '发送中' : formatDate(comment.createdAt) }}</span></div><p>{{ comment.content }}</p><button type="button" :disabled="comment.status === 'sending'" :aria-pressed="Boolean(comment.likedByMe)" @click="toggleCommentLike(comment)">点赞 {{ comment.likeCount || 0 }}</button></article></div>
+          <form v-if="currentUser" class="comment-composer" @submit.prevent="submitComment"><textarea v-model="commentDraft" maxlength="1000" placeholder="写下你的评论" aria-label="评论内容" /><button type="submit" :disabled="commentSubmitting || !commentDraft.trim()">发布评论</button></form><p v-else class="comments-login-note">登录后可以发表评论。</p><button v-if="commentsCursor && !commentsLoading" class="comments-load-more" type="button" @click="loadComments()">加载更多</button>
+        </section>
       </section>
-
       <aside class="watch-layout__aside" aria-label="接着看">
         <h2>接着看</h2>
         <div v-if="recommendationsError" class="recommendations-error" role="alert">
@@ -176,6 +261,7 @@ h1 { font-size: clamp(1.45rem, 2.5vw, 2.15rem); letter-spacing: -.045em; line-he
 .author-panel__avatar { align-items: center; background: color-mix(in srgb, var(--brand) 32%, var(--surface-2)); border-radius: 50%; color: var(--text); display: inline-flex; flex: 0 0 auto; font-weight: 800; height: 42px; justify-content: center; width: 42px; }
 .author-panel__name { font-weight: 750; margin: 0; }.author-panel__bio { color: var(--muted); font-size: .86rem; line-height: 1.45; margin: 3px 0 0; }
 .video-description { line-height: 1.7; margin: 20px 0 0; white-space: pre-line; }
+.comments-section { border-top: 1px solid var(--border); margin-top: 26px; padding-top: 22px; }.comments-section__heading { align-items: center; display: flex; justify-content: space-between; }.comments-section h2 { font-size: 1.2rem; margin: 0; }.comments-section__heading button, .comments-load-more, .comment-item button { background: transparent; border: 1px solid var(--border); border-radius: 8px; color: var(--text); cursor: pointer; font: inherit; font-size: .82rem; padding: 7px 10px; }.comments-group { margin-top: 20px; }.comments-group h3 { font-size: .95rem; margin: 0 0 10px; }.comment-item { border-bottom: 1px solid var(--border); padding: 13px 0; }.comment-item--sending { opacity: .7; }.comment-item__meta { align-items: center; display: flex; gap: 9px; }.comment-item__meta span, .comments-empty, .comments-login-note { color: var(--muted); font-size: .82rem; }.comment-item p { line-height: 1.55; margin: 7px 0 10px; white-space: pre-line; }.comment-item button[aria-pressed="true"] { border-color: var(--brand); color: var(--brand); }.comment-item button:disabled { cursor: progress; }.comment-composer { display: grid; gap: 10px; margin-top: 18px; }.comment-composer textarea { background: var(--surface); border: 1px solid var(--border); border-radius: 8px; color: var(--text); font: inherit; min-height: 78px; padding: 10px; resize: vertical; }.comment-composer button { background: var(--brand-action); border: 0; border-radius: 8px; color: var(--on-brand); cursor: pointer; font: inherit; font-weight: 700; justify-self: end; padding: 8px 13px; }.comment-composer button:disabled { cursor: not-allowed; opacity: .6; }.comments-error { color: var(--danger); margin: 12px 0 0; }.comments-load-more { display: block; margin: 16px auto 0; }
 .watch-layout__aside { min-width: 0; }.watch-layout__aside h2 { font-size: 1.12rem; margin: 2px 0 16px; }
 .recommendations-list { display: grid; gap: 16px; }.recommendations-error, .recommendations-empty { background: var(--surface-2); border-radius: 10px; color: var(--muted); font-size: .88rem; margin: 0; padding: 15px; }.recommendations-error { color: var(--danger); }.recommendations-error p { margin: 0; }.recommendations-retry { background: var(--brand-action); border: 0; border-radius: 999px; color: var(--on-brand); font-weight: 700; margin-top: 12px; padding: 7px 13px; }
 @media (max-width: 1000px) { .watch-layout { grid-template-columns: minmax(0, 1fr); }.watch-layout__aside { border-top: 1px solid var(--border); padding-top: 24px; } }

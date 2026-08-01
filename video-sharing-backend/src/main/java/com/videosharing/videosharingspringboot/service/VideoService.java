@@ -14,6 +14,8 @@ import com.videosharing.videosharingspringboot.dto.UserSubmissionResponse;
 import com.videosharing.videosharingspringboot.repository.VideoRepository;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 
 import java.io.IOException;
@@ -40,10 +42,12 @@ public class VideoService {
     private final Clock clock;
     private final String pendingPrefix;
     private final String publicPrefix;
+    private final VideoSearchService videoSearch;
 
     @Autowired
     public VideoService(VideoRepository videoRepository,
                         ObjectStorageService objectStorage,
+                        VideoSearchService videoSearch,
                         @Value("${object-storage.validation-dir:${java.io.tmpdir}/video-sharing-validation}") String objectValidationDir,
                         @Value("${object-storage.presign-expiration-minutes:15}") long presignExpirationMinutes,
                         @Value("${video-download.presign-expiration-minutes:15}") long downloadPresignExpirationMinutes,
@@ -52,7 +56,7 @@ public class VideoService {
                         @Value("${object-storage.public-prefix:public/}") String publicPrefix) {
         this(videoRepository, objectStorage, objectValidationDir, Duration.ofMinutes(presignExpirationMinutes),
                 Duration.ofMinutes(downloadPresignExpirationMinutes), Duration.ofDays(rejectedRetentionDays),
-                Clock.systemUTC(), pendingPrefix, publicPrefix);
+                Clock.systemUTC(), pendingPrefix, publicPrefix, videoSearch);
     }
 
     VideoService(VideoRepository videoRepository,
@@ -60,7 +64,16 @@ public class VideoService {
                  String objectValidationDir,
                  Duration presignExpiration) {
         this(videoRepository, objectStorage, objectValidationDir, presignExpiration, presignExpiration,
-                Duration.ofDays(7), Clock.systemUTC(), "pending/", "public/");
+                Duration.ofDays(7), Clock.systemUTC(), "pending/", "public/", null);
+    }
+
+    VideoService(VideoRepository videoRepository,
+                 ObjectStorageService objectStorage,
+                 String objectValidationDir,
+                 Duration presignExpiration,
+                 VideoSearchService videoSearch) {
+        this(videoRepository, objectStorage, objectValidationDir, presignExpiration, presignExpiration,
+                Duration.ofDays(7), Clock.systemUTC(), "pending/", "public/", videoSearch);
     }
 
     VideoService(VideoRepository videoRepository,
@@ -70,7 +83,7 @@ public class VideoService {
                  Duration rejectedDownloadRetention,
                  Clock clock) {
         this(videoRepository, objectStorage, objectValidationDir, presignExpiration, presignExpiration,
-                rejectedDownloadRetention, clock, "pending/", "public/");
+                rejectedDownloadRetention, clock, "pending/", "public/", null);
     }
 
     VideoService(VideoRepository videoRepository,
@@ -81,7 +94,7 @@ public class VideoService {
                  Duration rejectedDownloadRetention,
                  Clock clock) {
         this(videoRepository, objectStorage, objectValidationDir, presignExpiration, downloadPresignExpiration,
-                rejectedDownloadRetention, clock, "pending/", "public/");
+                rejectedDownloadRetention, clock, "pending/", "public/", null);
     }
 
     VideoService(VideoRepository videoRepository,
@@ -93,6 +106,20 @@ public class VideoService {
                  Clock clock,
                  String pendingPrefix,
                  String publicPrefix) {
+        this(videoRepository, objectStorage, objectValidationDir, presignExpiration, downloadPresignExpiration,
+                rejectedDownloadRetention, clock, pendingPrefix, publicPrefix, null);
+    }
+
+    VideoService(VideoRepository videoRepository,
+                 ObjectStorageService objectStorage,
+                 String objectValidationDir,
+                 Duration presignExpiration,
+                 Duration downloadPresignExpiration,
+                 Duration rejectedDownloadRetention,
+                 Clock clock,
+                 String pendingPrefix,
+                 String publicPrefix,
+                 VideoSearchService videoSearch) {
         this.videoRepository = videoRepository;
         this.objectStorage = objectStorage;
         this.objectValidationPath = Paths.get(objectValidationDir).toAbsolutePath().normalize();
@@ -102,16 +129,31 @@ public class VideoService {
         this.clock = clock;
         this.pendingPrefix = normalizePrefix(pendingPrefix);
         this.publicPrefix = normalizePrefix(publicPrefix);
+        this.videoSearch = videoSearch;
     }
 
     public List<Video> getAllVideos() {
         return videoRepository.findAllByStatusOrderByUploadDateAscIdAsc(VideoStatus.APPROVED);
     }
 
-    public List<UserSubmissionResponse> getSubmissions(User user) {
-        return videoRepository.findAllByUserIdOrderByUploadDateDescIdDesc(user.getId()).stream()
-                .map(video -> UserSubmissionResponse.from(video, now(), rejectedDownloadRetention))
-                .toList();
+    public Page<Video> getRecommendedVideos(Pageable pageable) {
+        return videoRepository.findAllByStatusOrderByViewsDescUploadDateDescIdDesc(VideoStatus.APPROVED, pageable);
+    }
+
+    public Page<Video> searchPublicVideos(String query, Pageable pageable) {
+        String trimmed = query == null ? "" : query.trim();
+        if (trimmed.isEmpty()) {
+            return getRecommendedVideos(pageable);
+        }
+        if (videoSearch == null) {
+            throw new VideoSearchUnavailableException("Video search is not configured");
+        }
+        return videoSearch.searchApproved(trimmed, pageable);
+    }
+
+    public Page<UserSubmissionResponse> getSubmissions(User user, Pageable pageable) {
+        return videoRepository.findAllByUserIdOrderByUploadDateDescIdDesc(user.getId(), pageable)
+                .map(video -> UserSubmissionResponse.from(video, now(), rejectedDownloadRetention));
     }
 
     public VideoDownloadTarget createDownload(User user, Long videoId, DownloadFile file) {

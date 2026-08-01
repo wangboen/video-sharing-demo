@@ -3,6 +3,7 @@ import axios from 'axios';
 import { onBeforeUnmount, ref } from 'vue';
 import api from '../services/api';
 import { friendlyApiError } from '../utils/apiError';
+import { generateThumbnailFromVideo } from '../utils/videoThumbnail';
 
 const title = ref('');
 const description = ref('');
@@ -47,6 +48,7 @@ const handleUpload = async () => {
   uploading.value = true;
   let session = null;
   try {
+    const effectiveThumbnail = selectedThumbnail.value || await generateThumbnailFromVideo(selectedFile.value);
     const sessionResponse = await api.post('/api/videos/upload-session', {
       title: title.value,
       description: description.value,
@@ -55,11 +57,11 @@ const handleUpload = async () => {
         contentType: selectedFile.value.type,
         size: selectedFile.value.size,
       },
-      thumbnail: selectedThumbnail.value
+      thumbnail: effectiveThumbnail
         ? {
-            fileName: selectedThumbnail.value.name,
-            contentType: selectedThumbnail.value.type,
-            size: selectedThumbnail.value.size,
+            fileName: effectiveThumbnail.name,
+            contentType: effectiveThumbnail.type,
+            size: effectiveThumbnail.size,
           }
         : null,
     });
@@ -69,8 +71,8 @@ const handleUpload = async () => {
         'Content-Type': session.video.contentType,
       },
     });
-    if (selectedThumbnail.value && session.thumbnail) {
-      await axios.put(session.thumbnail.uploadUrl, selectedThumbnail.value, {
+    if (effectiveThumbnail && session.thumbnail) {
+      await axios.put(session.thumbnail.uploadUrl, effectiveThumbnail, {
         headers: {
           'Content-Type': session.thumbnail.contentType,
         },
@@ -118,10 +120,10 @@ onBeforeUnmount(revokeThumbnailPreview);
     <section class="upload-intro">
       <p class="section-kicker">创作工作室</p>
       <h1>发布新视频</h1>
-      <p>准备好标题、简介和封面，让每一次分享都有清晰的表达。</p>
+      <p>准备好标题和简介；没有封面时，系统会自动从视频生成一张。</p>
       <dl class="upload-notes">
         <div><dt>01</dt><dd>选择你要发布的视频文件</dd></div>
-        <div><dt>02</dt><dd>添加醒目的封面与内容简介</dd></div>
+        <div><dt>02</dt><dd>可选上传封面，未上传时自动生成</dd></div>
         <div><dt>03</dt><dd>提交审核后可在我的投稿中查看</dd></div>
       </dl>
     </section>
@@ -165,8 +167,8 @@ onBeforeUnmount(revokeThumbnailPreview);
           />
           <label class="media-file-picker" for="thumbnail">
             <span class="media-file-picker__eyebrow">视频封面</span>
-            <span class="media-file-picker__action">{{ selectedThumbnail ? '更换封面文件' : '选择封面文件' }}</span>
-            <span class="media-file-picker__hint">{{ selectedThumbnail ? selectedThumbnail.name : '支持 JPG、PNG、WebP' }}</span>
+            <span class="media-file-picker__action">{{ selectedThumbnail ? '更换封面文件' : '选择封面文件（可选）' }}</span>
+            <span class="media-file-picker__hint">{{ selectedThumbnail ? selectedThumbnail.name : '未选择时自动生成，支持 JPG、PNG、WebP' }}</span>
           </label>
           <img v-if="thumbnailPreview" :src="thumbnailPreview" alt="视频封面预览" class="thumbnail-preview" />
         </div>

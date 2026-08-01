@@ -4,6 +4,9 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 const mocks = vi.hoisted(() => ({
   get: vi.fn(),
+  post: vi.fn(),
+  delete: vi.fn(),
+  getStoredUser: vi.fn(),
   route: { params: { id: 'A' } },
 }))
 
@@ -12,7 +15,11 @@ vi.mock('vue-router', () => ({
 }))
 
 vi.mock('../services/api', () => ({
-  default: { get: mocks.get },
+  default: { get: mocks.get, post: mocks.post, delete: mocks.delete },
+}))
+
+vi.mock('../services/auth', () => ({
+  getStoredUser: mocks.getStoredUser,
 }))
 
 import VideoPlayer from './VideoPlayer.vue'
@@ -42,6 +49,9 @@ function video(id, title = `video-${id}`) {
 describe('VideoPlayer', () => {
   beforeEach(() => {
     mocks.get.mockReset()
+    mocks.post.mockReset()
+    mocks.delete.mockReset()
+    mocks.getStoredUser.mockReturnValue({ username: 'vision-user' })
     mocks.route.params = reactive({ id: 'A' })
   })
 
@@ -51,7 +61,7 @@ describe('VideoPlayer', () => {
     const wrapper = mount(VideoPlayer, { global })
     await flushPromises()
 
-    expect(mocks.get.mock.calls.map(([url]) => url)).toEqual(['/api/videos'])
+    expect(mocks.get.mock.calls.map(([url]) => url)).toEqual(['/api/videos', '/api/videos/A/comments'])
     expect(wrapper.text()).toContain('current video')
     expect(wrapper.text()).toContain('recommended video')
   })
@@ -86,8 +96,39 @@ describe('VideoPlayer', () => {
     await nextTick()
     await flushPromises()
 
-    expect(mocks.get.mock.calls.map(([url]) => url)).toEqual(['/api/videos', '/api/videos'])
+    expect(mocks.get.mock.calls.map(([url]) => url)).toEqual([
+      '/api/videos',
+      '/api/videos/A/comments',
+      '/api/videos',
+      '/api/videos/B/comments',
+    ])
     expect(wrapper.findAll('.video-actions button').map((button) => button.attributes('aria-pressed'))).toEqual(['false', 'false'])
+  })
+
+  it('loads comments for a new route while the previous video comments are still pending', async () => {
+    let resolveFirstComments
+    const firstComments = new Promise((resolve) => {
+      resolveFirstComments = resolve
+    })
+    mocks.get.mockImplementation((url) => {
+      if (url === '/api/videos') return Promise.resolve({ data: [video('A'), video('B')] })
+      if (url === '/api/videos/A/comments') return firstComments
+      return Promise.resolve({
+        data: { featured: [], comments: [{ commentId: 2, username: 'B-user', content: 'B comment' }], nextCursor: null },
+      })
+    })
+
+    const wrapper = mount(VideoPlayer, { global })
+    await flushPromises()
+    mocks.route.params.id = 'B'
+    await nextTick()
+    await flushPromises()
+
+    expect(mocks.get.mock.calls.map(([url]) => url)).toContain('/api/videos/B/comments')
+    expect(wrapper.text()).toContain('B comment')
+    resolveFirstComments({ data: { featured: [], comments: [{ commentId: 1, content: 'A comment' }], nextCursor: null } })
+    await flushPromises()
+    expect(wrapper.text()).not.toContain('A comment')
   })
 
   it('retries the list request after a loading failure', async () => {
@@ -99,7 +140,52 @@ describe('VideoPlayer', () => {
     await wrapper.get('.error-state button').trigger('click')
     await flushPromises()
 
-    expect(mocks.get.mock.calls.map(([url]) => url)).toEqual(['/api/videos', '/api/videos'])
+    expect(mocks.get.mock.calls.map(([url]) => url)).toEqual([
+      '/api/videos',
+      '/api/videos',
+      '/api/videos/A/comments',
+    ])
     expect(wrapper.text()).toContain('retried recommendation')
+  })
+
+  it('renders featured comments above normal comments and labels anonymized authors', async () => {
+    mocks.get.mockImplementation((url) => {
+      if (url === '/api/videos') return Promise.resolve({ data: [video('A')] })
+      return Promise.resolve({
+        data: {
+          featured: [{ commentId: 1, username: 'top-user', content: 'featured comment', likeCount: 4 }],
+          comments: [{ commentId: 2, username: 'hidden-user', content: 'normal comment', anonymized: true, likeCount: 0 }],
+          nextCursor: null,
+        },
+      })
+    })
+
+    const wrapper = mount(VideoPlayer, { global })
+    await flushPromises()
+
+    const items = wrapper.findAll('.comment-item')
+    expect(items.map((item) => item.text())).toEqual([
+      expect.stringContaining('featured comment'),
+      expect.stringContaining('匿名用户'),
+    ])
+    expect(wrapper.text()).toContain('normal comment')
+  })
+
+  it('adds a sending comment after the publish request is accepted', async () => {
+    mocks.get.mockImplementation((url) => {
+      if (url === '/api/videos') return Promise.resolve({ data: [video('A')] })
+      return Promise.resolve({ data: { featured: [], comments: [], nextCursor: null } })
+    })
+    mocks.post.mockResolvedValue({ data: { commentId: 99, requestId: 'request-99', status: 'ACCEPTED' } })
+
+    const wrapper = mount(VideoPlayer, { global })
+    await flushPromises()
+    await wrapper.get('.comment-composer textarea').setValue('pending comment')
+    await wrapper.get('.comment-composer').trigger('submit')
+    await flushPromises()
+
+    expect(mocks.post).toHaveBeenCalledWith('/api/videos/A/comments', { content: 'pending comment' })
+    expect(wrapper.get('.comment-item--sending').text()).toContain('pending comment')
+    expect(wrapper.get('.comment-item--sending').text()).toContain('发送中')
   })
 })

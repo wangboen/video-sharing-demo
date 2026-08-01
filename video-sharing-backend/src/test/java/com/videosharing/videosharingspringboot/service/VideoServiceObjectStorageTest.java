@@ -13,7 +13,6 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
 import java.io.ByteArrayInputStream;
-import java.io.InputStream;
 import java.net.URI;
 import java.nio.file.Path;
 import java.time.Duration;

@@ -20,9 +20,21 @@ import java.util.Optional;
 @Repository
 public interface VideoRepository extends JpaRepository<Video, Long> {
     List<Video> findAllByStatusOrderByUploadDateAscIdAsc(VideoStatus status);
+    Page<Video> findAllByStatusOrderByViewsDescUploadDateDescIdDesc(VideoStatus status, Pageable pageable);
     Optional<Video> findByIdAndStatus(Long id, VideoStatus status);
-    List<Video> findAllByUserIdOrderByUploadDateDescIdDesc(Long userId);
+    Page<Video> findAllByUserIdOrderByUploadDateDescIdDesc(Long userId, Pageable pageable);
     Optional<Video> findByIdAndUserId(Long id, Long userId);
+
+    @Query("""
+            select v from Video v
+            where v.status = :status
+              and (lower(v.title) like lower(concat('%', :query, '%'))
+                or lower(coalesce(v.description, '')) like lower(concat('%', :query, '%')))
+            order by v.uploadDate desc, v.id desc
+            """)
+    Page<Video> searchPublicVideos(@Param("status") VideoStatus status,
+                                   @Param("query") String query,
+                                   Pageable pageable);
 
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     @Query("select v from Video v where v.id = :id")
@@ -38,7 +50,6 @@ public interface VideoRepository extends JpaRepository<Video, Long> {
                                             @Param("status") VideoStatus status,
                                             @Param("now") Instant now);
 
-    @Lock(LockModeType.PESSIMISTIC_WRITE)
     @Query("""
             select v from Video v
             where v.status = :status

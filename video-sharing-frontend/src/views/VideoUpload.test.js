@@ -1,7 +1,12 @@
 import { flushPromises, mount } from '@vue/test-utils'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
-const mocks = vi.hoisted(() => ({ post: vi.fn(), apiPut: vi.fn(), rawPut: vi.fn() }))
+const mocks = vi.hoisted(() => ({
+  post: vi.fn(),
+  apiPut: vi.fn(),
+  rawPut: vi.fn(),
+  generateThumbnailFromVideo: vi.fn(),
+}))
 
 vi.mock('vue-router', () => ({
   useRouter: () => ({ push: vi.fn() }),
@@ -13,6 +18,10 @@ vi.mock('../services/api', () => ({
 
 vi.mock('axios', () => ({
   default: { put: mocks.rawPut },
+}))
+
+vi.mock('../utils/videoThumbnail', () => ({
+  generateThumbnailFromVideo: mocks.generateThumbnailFromVideo,
 }))
 
 import VideoUpload from './VideoUpload.vue'
@@ -55,13 +64,20 @@ describe('video direct upload', () => {
     mocks.post.mockReset()
     mocks.apiPut.mockReset()
     mocks.rawPut.mockReset()
+    mocks.generateThumbnailFromVideo.mockReset()
+    mocks.generateThumbnailFromVideo.mockResolvedValue(uploadedFile('auto-cover.jpg', 'image/jpeg'))
     URL.createObjectURL = vi.fn(() => 'blob:thumbnail')
     URL.revokeObjectURL = vi.fn()
   })
 
   it('creates an upload session, uploads the video to MinIO, then completes the submission', async () => {
+    const thumbnailTarget = {
+      key: 'pending/users/7/session-id/thumbnail/auto-cover.jpg',
+      uploadUrl: 'http://minio.local/upload-auto-thumb',
+      contentType: 'image/jpeg',
+    }
     mocks.post
-      .mockResolvedValueOnce(sessionResponse())
+      .mockResolvedValueOnce(sessionResponse(thumbnailTarget))
       .mockResolvedValueOnce({ data: { id: 1 } })
     mocks.rawPut.mockResolvedValue({})
     const wrapper = mount(VideoUpload)
@@ -73,20 +89,24 @@ describe('video direct upload', () => {
     await wrapper.get('form').trigger('submit')
     await flushPromises()
 
+    expect(mocks.generateThumbnailFromVideo).toHaveBeenCalledWith(video)
     expect(mocks.post).toHaveBeenNthCalledWith(1, '/api/videos/upload-session', {
       title: 'My video',
       description: 'Description',
       video: { fileName: 'demo.mp4', contentType: 'video/mp4', size: video.size },
-      thumbnail: null,
+      thumbnail: { fileName: 'auto-cover.jpg', contentType: 'image/jpeg', size: expect.any(Number) },
     })
     expect(mocks.rawPut).toHaveBeenCalledWith('http://minio.local/upload-video', video, {
       headers: { 'Content-Type': 'video/mp4' },
+    })
+    expect(mocks.rawPut).toHaveBeenCalledWith('http://minio.local/upload-auto-thumb', expect.any(File), {
+      headers: { 'Content-Type': 'image/jpeg' },
     })
     expect(mocks.apiPut).not.toHaveBeenCalled()
     expect(mocks.post).toHaveBeenNthCalledWith(2, '/api/videos/upload-complete', {
       uploadSessionId: 'session-id',
       videoKey: 'pending/users/7/session-id/video/demo.mp4',
-      thumbnailKey: null,
+      thumbnailKey: thumbnailTarget.key,
       title: 'My video',
       description: 'Description',
     })
@@ -112,6 +132,7 @@ describe('video direct upload', () => {
     await wrapper.get('form').trigger('submit')
     await flushPromises()
 
+    expect(mocks.generateThumbnailFromVideo).not.toHaveBeenCalled()
     expect(mocks.rawPut).toHaveBeenNthCalledWith(1, 'http://minio.local/upload-video', video, expect.any(Object))
     expect(mocks.rawPut).toHaveBeenNthCalledWith(2, 'http://minio.local/upload-thumb', thumbnail, {
       headers: { 'Content-Type': 'image/png' },

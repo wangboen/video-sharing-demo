@@ -15,6 +15,13 @@ const loadingVideos = ref(false);
 const videosError = ref('');
 const downloadError = ref('');
 const activeDownload = ref('');
+const currentPage = ref(0);
+const totalPages = ref(0);
+const totalElements = ref(0);
+const comments = ref([]);
+const loadingComments = ref(false);
+const commentsError = ref('');
+const SUBMISSION_PAGE_SIZE = 6;
 
 const statusLabels = {
   PENDING: '待审核',
@@ -44,16 +51,59 @@ const downloadFile = async (video, file) => {
   }
 };
 
-const loadVideos = async () => {
+const loadVideos = async (page = currentPage.value) => {
   loadingVideos.value = true;
   videosError.value = '';
   try {
-    const response = await api.get('/api/users/me/videos');
-    videos.value = Array.isArray(response.data) ? response.data : [];
+    const response = await api.get('/api/users/me/videos', {
+      params: { page, size: SUBMISSION_PAGE_SIZE },
+    });
+    if (Array.isArray(response.data)) {
+      videos.value = response.data;
+      currentPage.value = 0;
+      totalPages.value = response.data.length ? 1 : 0;
+      totalElements.value = response.data.length;
+    } else {
+      videos.value = Array.isArray(response.data?.content) ? response.data.content : [];
+      currentPage.value = Number.isInteger(response.data?.number) ? response.data.number : page;
+      totalPages.value = Number.isInteger(response.data?.totalPages) ? response.data.totalPages : 0;
+      totalElements.value = Number.isInteger(response.data?.totalElements)
+        ? response.data.totalElements
+        : videos.value.length;
+    }
   } catch {
     videosError.value = '投稿加载失败，请稍后重试。';
   } finally {
     loadingVideos.value = false;
+  }
+};
+
+const loadSubmissionPage = (page) => {
+  if (loadingVideos.value || page < 0 || (totalPages.value && page >= totalPages.value)) {
+    return;
+  }
+  loadVideos(page);
+};
+
+const loadComments = async () => {
+  loadingComments.value = true;
+  commentsError.value = '';
+  try {
+    const response = await api.get('/api/users/me/comments');
+    comments.value = Array.isArray(response.data) ? response.data : (response.data?.content || []);
+  } catch {
+    commentsError.value = '评论加载失败，请稍后重试。';
+  } finally {
+    loadingComments.value = false;
+  }
+};
+
+const anonymizeComment = async (commentId) => {
+  try {
+    await api.delete(`/api/users/me/comments/${commentId}`);
+    comments.value = comments.value.filter((comment) => comment.commentId !== commentId);
+  } catch {
+    commentsError.value = '评论删除失败，请稍后重试。';
   }
 };
 
@@ -62,6 +112,7 @@ onMounted(() => {
   if (storedUser) {
     user.value = storedUser;
     loadVideos();
+    loadComments();
   } else {
     router.push('/login');
   }
@@ -109,9 +160,9 @@ const handleLogout = async () => {
         <RouterLink to="/upload" class="channel-primary">上传新视频</RouterLink>
       </div>
 
+      <p v-if="downloadError" class="submission-download-error" role="alert">{{ downloadError }}</p>
       <LoadingState v-if="loadingVideos" :count="3" />
       <ErrorState v-else-if="videosError" :message="videosError" @retry="loadVideos" />
-      <p v-if="downloadError" class="submission-download-error" role="alert">{{ downloadError }}</p>
       <EmptyState
         v-else-if="!videos.length"
         title="还没有投稿"
@@ -156,6 +207,32 @@ const handleLogout = async () => {
           </dl>
         </article>
       </div>
+      <nav v-if="totalPages > 1" class="submission-pagination" aria-label="投稿分页">
+        <button
+          class="submission-page-prev"
+          type="button"
+          :disabled="currentPage <= 0 || loadingVideos"
+          @click="loadSubmissionPage(currentPage - 1)"
+        >
+          上一页
+        </button>
+        <span>{{ currentPage + 1 }} / {{ totalPages }} · {{ totalElements }}</span>
+        <button
+          class="submission-page-next"
+          type="button"
+          :disabled="currentPage >= totalPages - 1 || loadingVideos"
+          @click="loadSubmissionPage(currentPage + 1)"
+        >
+          下一页
+        </button>
+      </nav>
+    </section>
+    <section class="personal-comments-section" aria-labelledby="personal-comments-title">
+      <div class="submissions-heading"><div><p class="channel-kicker">互动记录</p><h2 id="personal-comments-title">我的评论</h2></div></div>
+      <p v-if="commentsError" class="submission-download-error" role="alert">{{ commentsError }}</p>
+      <LoadingState v-else-if="loadingComments" :count="2" />
+      <p v-else-if="!comments.length" class="personal-comments-empty">还没有发表过评论。</p>
+      <div v-else class="personal-comments-list"><article v-for="comment in comments" :key="comment.commentId" class="personal-comment"><div><p>{{ comment.content }}</p><span>{{ formatDate(comment.createdAt) }}</span></div><button class="personal-comment-delete" type="button" @click="anonymizeComment(comment.commentId)">删除</button></article></div>
     </section>
   </section>
 </template>
@@ -168,6 +245,7 @@ const handleLogout = async () => {
 .channel-card { display: grid; grid-template-columns: auto 1fr auto; gap: 24px; align-items: center; margin-top: 24px; padding: 30px; border: 1px solid var(--border); border-radius: 20px; background: var(--surface); box-shadow: 0 18px 42px color-mix(in srgb, var(--text) 7%, transparent); }
 .channel-avatar { display: grid; width: 68px; height: 68px; place-items: center; border-radius: 50%; background: color-mix(in srgb, var(--brand) 22%, var(--surface-2)); color: var(--text); font-size: 1.75rem; font-weight: 800; }.channel-profile h2 { margin: 7px 0; color: var(--text); font-size: 1.5rem; }.channel-profile p:last-child { margin: 0; color: var(--muted); }
 .channel-actions { display: flex; flex-wrap: wrap; gap: 10px; justify-content: flex-end; }.channel-actions a, .channel-actions button { padding: 10px 14px; border-radius: 9px; font: inherit; font-weight: 700; text-decoration: none; cursor: pointer; }.channel-primary { background: var(--brand-action); color: var(--on-brand); }.channel-secondary { border: 1px solid var(--border); color: var(--text); }.channel-actions button { border: 0; background: transparent; color: var(--danger); }
-.submissions-section { margin-top: 42px; }.submissions-heading { align-items: center; display: flex; gap: 20px; justify-content: space-between; margin-bottom: 18px; }.submissions-heading h2 { color: var(--text); margin: 6px 0 0; }.submissions-heading a { border-radius: 9px; font-weight: 700; padding: 10px 14px; text-decoration: none; }.submission-grid { display: grid; gap: 16px; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); }.submission-card { background: var(--surface); border: 1px solid var(--border); border-radius: 16px; padding: 20px; }.submission-card__heading { align-items: start; display: flex; gap: 12px; justify-content: space-between; }.submission-card h3 { color: var(--text); margin: 0; }.submission-status { border-radius: 999px; font-size: .8rem; font-weight: 750; padding: 5px 9px; white-space: nowrap; }.submission-status--pending { background: color-mix(in srgb, var(--brand-warm) 22%, var(--surface)); color: var(--text); }.submission-status--approved { background: color-mix(in srgb, var(--success) 18%, var(--surface)); color: var(--success); }.submission-status--rejected { background: color-mix(in srgb, var(--danger) 16%, var(--surface)); color: var(--danger); }.submission-reason { color: var(--danger); line-height: 1.55; margin: 14px 0; }.submission-download-note { color: var(--muted); font-size: .9rem; margin: 12px 0 0; }.submission-downloads { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 14px; }.submission-download { border: 0; border-radius: 9px; background: var(--brand-action); color: var(--on-brand); cursor: pointer; font: inherit; font-weight: 750; padding: 8px 12px; text-decoration: none; }.submission-download:disabled { cursor: progress; opacity: .72; }.submission-download--secondary { background: transparent; border: 1px solid var(--border); color: var(--text); }.submission-download-error { color: var(--danger); font-weight: 700; margin: 0 0 16px; }.submission-expired { color: var(--muted); font-weight: 700; margin: 14px 0 0; }.submission-times { display: grid; gap: 7px; margin: 16px 0 0; }.submission-times div { display: flex; gap: 8px; }.submission-times dt { color: var(--muted); }.submission-times dd { color: var(--text); margin: 0; }
+.submissions-section { margin-top: 42px; }.submissions-heading { align-items: center; display: flex; gap: 20px; justify-content: space-between; margin-bottom: 18px; }.submissions-heading h2 { color: var(--text); margin: 6px 0 0; }.submissions-heading a { border-radius: 9px; font-weight: 700; padding: 10px 14px; text-decoration: none; }.submission-grid { display: grid; gap: 16px; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); }.submission-card { background: var(--surface); border: 1px solid var(--border); border-radius: 16px; padding: 20px; }.submission-card__heading { align-items: start; display: flex; gap: 12px; justify-content: space-between; }.submission-card h3 { color: var(--text); margin: 0; }.submission-status { border-radius: 999px; font-size: .8rem; font-weight: 750; padding: 5px 9px; white-space: nowrap; }.submission-status--pending { background: color-mix(in srgb, var(--brand-warm) 22%, var(--surface)); color: var(--text); }.submission-status--approved { background: color-mix(in srgb, var(--success) 18%, var(--surface)); color: var(--success); }.submission-status--rejected { background: color-mix(in srgb, var(--danger) 16%, var(--surface)); color: var(--danger); }.submission-reason { color: var(--danger); line-height: 1.55; margin: 14px 0; }.submission-download-note { color: var(--muted); font-size: .9rem; margin: 12px 0 0; }.submission-downloads { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 14px; }.submission-download { border: 0; border-radius: 9px; background: var(--brand-action); color: var(--on-brand); cursor: pointer; font: inherit; font-weight: 750; padding: 8px 12px; text-decoration: none; }.submission-download:disabled { cursor: progress; opacity: .72; }.submission-download--secondary { background: transparent; border: 1px solid var(--border); color: var(--text); }.submission-download-error { color: var(--danger); font-weight: 700; margin: 0 0 16px; }.submission-expired { color: var(--muted); font-weight: 700; margin: 14px 0 0; }.submission-times { display: grid; gap: 7px; margin: 16px 0 0; }.submission-times div { display: flex; gap: 8px; }.submission-times dt { color: var(--muted); }.submission-times dd { color: var(--text); margin: 0; }.submission-pagination { align-items: center; display: flex; gap: 12px; justify-content: center; margin-top: 22px; }.submission-pagination button { border: 1px solid var(--border); border-radius: 9px; background: var(--surface); color: var(--text); cursor: pointer; font: inherit; font-weight: 750; padding: 8px 12px; }.submission-pagination button:disabled { cursor: not-allowed; opacity: .55; }.submission-pagination span { color: var(--muted); font-weight: 700; }
+.personal-comments-section { border-top: 1px solid var(--border); margin-top: 42px; padding-top: 28px; }.personal-comments-list { display: grid; gap: 10px; }.personal-comment { align-items: center; border-bottom: 1px solid var(--border); display: flex; gap: 18px; justify-content: space-between; padding: 13px 0; }.personal-comment p { margin: 0 0 5px; }.personal-comment span, .personal-comments-empty { color: var(--muted); font-size: .84rem; }.personal-comment-delete { background: transparent; border: 1px solid var(--border); border-radius: 8px; color: var(--danger); cursor: pointer; font: inherit; padding: 7px 10px; }
 @media (max-width: 760px) { .channel-hero { padding: 32px 26px; }.channel-card { grid-template-columns: auto 1fr; }.channel-actions { grid-column: 1 / -1; justify-content: flex-start; } }
 </style>

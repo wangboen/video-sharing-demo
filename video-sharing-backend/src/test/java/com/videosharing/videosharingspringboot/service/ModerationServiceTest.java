@@ -38,6 +38,7 @@ import static org.mockito.Mockito.*;
 class ModerationServiceTest {
     @Mock VideoRepository videos;
     @Mock StaffAccountRepository staffAccounts;
+    @Mock VideoSearchService videoSearch;
     @TempDir Path temp;
     private ModerationService service;
     private FakeObjectStorage objectStorage;
@@ -52,7 +53,7 @@ class ModerationServiceTest {
         Clock clock = Clock.fixed(now, ZoneOffset.UTC);
         objectStorage = new FakeObjectStorage();
         service = new ModerationService(videos, staffAccounts, Duration.ofMinutes(15), clock, objectStorage,
-                temp.resolve("validation"), "http://minio.local");
+                temp.resolve("validation"), "http://minio.local", videoSearch);
     }
 
     @Test
@@ -263,6 +264,7 @@ class ModerationServiceTest {
         assertEquals("pending/users/9/session/thumbnail/thumb.png", leased.getThumbnailPath());
         assertTrue(objectStorage.contains(leased.getFilePath()));
         assertTrue(objectStorage.contains(leased.getThumbnailPath()));
+        verify(videoSearch).delete(10L);
     }
 
     @Test
@@ -338,6 +340,7 @@ class ModerationServiceTest {
         assertTrue(objectStorage.contains(leased.getThumbnailPath()));
         assertFalse(objectStorage.contains("pending/users/9/session/video/video.mp4"));
         assertFalse(objectStorage.contains("pending/users/9/session/thumbnail/thumb.png"));
+        verify(videoSearch).indexApproved(leased);
     }
 
     @Test
@@ -379,6 +382,7 @@ class ModerationServiceTest {
 
         assertTrue(objectStorage.contains("pending/users/9/session/video/video.mp4"));
         assertTrue(objectStorage.contains("pending/users/9/session/thumbnail/thumb.png"));
+        verifyNoInteractions(videoSearch);
     }
 
     private StaffAccount staff(long id, String username, Role role) {

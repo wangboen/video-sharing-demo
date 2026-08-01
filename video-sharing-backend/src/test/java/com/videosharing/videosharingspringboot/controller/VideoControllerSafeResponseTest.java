@@ -13,8 +13,12 @@ import com.videosharing.videosharingspringboot.model.Video;
 import com.videosharing.videosharingspringboot.model.VideoStatus;
 import com.videosharing.videosharingspringboot.service.UserService;
 import com.videosharing.videosharingspringboot.service.VideoService;
+import com.videosharing.videosharingspringboot.service.VideoSearchUnavailableException;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageImpl;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.test.util.ReflectionTestUtils;
 
@@ -66,6 +70,52 @@ class VideoControllerSafeResponseTest {
     void publicResponseRefusesToCreateMediaUrlsForPendingVideo() {
         when(videos.getAllVideos()).thenReturn(List.of(video(VideoStatus.PENDING)));
         assertThrows(IllegalArgumentException.class, controller::getAllVideos);
+    }
+
+    @Test
+    void recommendedVideosReturnPagedPublicVideoResponses() {
+        Video recommended = video(VideoStatus.APPROVED);
+        recommended.setId(11L);
+        recommended.setTitle("Recommended");
+        var pageable = PageRequest.of(0, 6);
+        when(videos.getRecommendedVideos(pageable)).thenReturn(new PageImpl<>(List.of(recommended), pageable, 8));
+
+        var response = controller.getRecommendedVideos(0, 6).getBody();
+
+        assertEquals(0, response.getNumber());
+        assertEquals(6, response.getSize());
+        assertEquals(8, response.getTotalElements());
+        assertEquals("Recommended", response.getContent().get(0).title());
+    }
+
+    @Test
+    void searchVideosReturnPagedPublicVideoResponsesForQuery() {
+        Video matched = video(VideoStatus.APPROVED);
+        matched.setId(12L);
+        matched.setTitle("Spring tutorial");
+        var pageable = PageRequest.of(0, 5);
+        when(videos.searchPublicVideos("spring", pageable)).thenReturn(new PageImpl<>(List.of(matched), pageable, 1));
+
+        @SuppressWarnings("unchecked")
+        Page<com.videosharing.videosharingspringboot.dto.PublicVideoResponse> response =
+                (Page<com.videosharing.videosharingspringboot.dto.PublicVideoResponse>)
+                        controller.searchVideos(" spring ", 0, 5).getBody();
+
+        assertEquals(0, response.getNumber());
+        assertEquals(1, response.getTotalElements());
+        assertEquals("Spring tutorial", response.getContent().get(0).title());
+    }
+
+    @Test
+    void searchVideosReturnsServiceUnavailableWhenSearchBackendIsDown() {
+        var pageable = PageRequest.of(0, 5);
+        when(videos.searchPublicVideos("spring", pageable))
+                .thenThrow(new VideoSearchUnavailableException("Elasticsearch unavailable"));
+
+        var response = controller.searchVideos(" spring ", 0, 5);
+
+        assertEquals(503, response.getStatusCode().value());
+        assertEquals("Video search is temporarily unavailable", response.getBody());
     }
 
     private Video video(VideoStatus status) {
