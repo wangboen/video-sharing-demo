@@ -1,13 +1,11 @@
 package com.videosharing.videosharingspringboot.service;
 
-import com.videosharing.videosharingspringboot.model.CommentLike;
 import com.videosharing.videosharingspringboot.model.CommentLikeId;
 import com.videosharing.videosharingspringboot.model.CommentRelation;
 import com.videosharing.videosharingspringboot.model.CommentStatus;
 import com.videosharing.videosharingspringboot.model.User;
 import com.videosharing.videosharingspringboot.repository.CommentLikeRepository;
 import com.videosharing.videosharingspringboot.repository.CommentRelationRepository;
-import org.springframework.dao.DataIntegrityViolationException;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
@@ -15,9 +13,9 @@ import org.mockito.junit.jupiter.MockitoExtension;
 
 import java.util.Optional;
 
-import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
@@ -34,22 +32,22 @@ class CommentLikeServiceTest {
         CommentLikeService service = new CommentLikeService(relations, likes, hotCache);
         CommentRelation relation = visibleRelation(101L, 42L, 5L);
         when(relations.findById(101L)).thenReturn(Optional.of(relation));
+        when(likes.insertIfAbsent(eq(101L), eq(7L), any())).thenReturn(1);
         when(relations.incrementVisibleLikeCount(101L)).thenReturn(1);
 
         service.like(user(7L), 101L);
 
-        verify(likes).saveAndFlush(any(CommentLike.class));
+        verify(likes).insertIfAbsent(eq(101L), eq(7L), any());
         verify(relations).incrementVisibleLikeCount(101L);
         verify(hotCache).markVideoForHotRefresh(42L);
     }
 
     @Test
-    void duplicateLikeConstraintViolationDoesNotIncrementMarkRefreshOrSurface() {
+    void duplicateLikeDoesNotIncrementMarkRefreshOrSurface() {
         CommentLikeService service = new CommentLikeService(relations, likes, hotCache);
         CommentRelation relation = visibleRelation(101L, 42L, 5L);
         when(relations.findById(101L)).thenReturn(Optional.of(relation));
-        when(likes.saveAndFlush(any(CommentLike.class)))
-                .thenThrow(new DataIntegrityViolationException("duplicate like"));
+        when(likes.insertIfAbsent(eq(101L), eq(7L), any())).thenReturn(0);
 
         service.like(user(7L), 101L);
 

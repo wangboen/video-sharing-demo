@@ -4,15 +4,21 @@ import com.videosharing.videosharingspringboot.model.CommentRelation;
 import com.videosharing.videosharingspringboot.model.CommentStatus;
 import com.videosharing.videosharingspringboot.model.User;
 import com.videosharing.videosharingspringboot.model.Video;
+import com.videosharing.videosharingspringboot.service.CommentLikeService;
+import com.videosharing.videosharingspringboot.service.HotCommentCacheService;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.orm.jpa.DataJpaTest;
+import org.springframework.boot.test.autoconfigure.orm.jpa.TestEntityManager;
 import org.springframework.data.domain.PageRequest;
 
 import java.time.Instant;
 import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.times;
+import static org.mockito.Mockito.verify;
 
 @DataJpaTest
 class CommentRelationRepositoryTest {
@@ -25,6 +31,12 @@ class CommentRelationRepositoryTest {
 
     @Autowired
     private VideoRepository videos;
+
+    @Autowired
+    private CommentLikeRepository likes;
+
+    @Autowired
+    private TestEntityManager entityManager;
 
     @Test
     void returnsOnlyVisibleCommentsInExplicitTimeAndHotOrder() {
@@ -59,6 +71,25 @@ class CommentRelationRepositoryTest {
         assertThat(hotIds).containsExactly(104L, 102L, 101L);
     }
 
+    @Test
+    void sequentialDuplicateLikeInsertsOnceAndIncrementsOnce() {
+        Instant createdAt = Instant.parse("2026-07-31T12:00:00Z");
+        User user = saveUser("comment-like-user");
+        Video video = saveVideo(user, "comment-like-video.mp4");
+        save(201L, video, user, CommentStatus.VISIBLE, 0L, false, createdAt);
+        HotCommentCacheService hotCache = mock(HotCommentCacheService.class);
+        CommentLikeService service = new CommentLikeService(comments, likes, hotCache);
+
+        service.like(user, 201L);
+        service.like(user, 201L);
+        entityManager.flush();
+        entityManager.clear();
+
+        assertThat(likes.count()).isEqualTo(1);
+        assertThat(comments.findById(201L).orElseThrow().getLikeCount()).isEqualTo(1L);
+        verify(hotCache, times(1)).markVideoForHotRefresh(video.getId());
+    }
+
     private void save(Long commentId,
                       Video video,
                       User user,
@@ -79,17 +110,25 @@ class CommentRelationRepositoryTest {
     }
 
     private User saveUser() {
+        return saveUser("comment-repository-user");
+    }
+
+    private User saveUser(String username) {
         User user = new User();
-        user.setUsername("comment-repository-user");
+        user.setUsername(username);
         user.setPassword("encoded-password");
         return users.saveAndFlush(user);
     }
 
     private Video saveVideo(User user) {
+        return saveVideo(user, "comment-repository.mp4");
+    }
+
+    private Video saveVideo(User user, String filePath) {
         Video video = new Video();
         video.setUser(user);
         video.setTitle("Comment repository video");
-        video.setFilePath("comment-repository.mp4");
+        video.setFilePath(filePath);
         return videos.saveAndFlush(video);
     }
 }

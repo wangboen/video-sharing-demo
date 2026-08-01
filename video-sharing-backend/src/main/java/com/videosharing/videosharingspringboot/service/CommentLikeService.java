@@ -1,13 +1,11 @@
 package com.videosharing.videosharingspringboot.service;
 
-import com.videosharing.videosharingspringboot.model.CommentLike;
 import com.videosharing.videosharingspringboot.model.CommentLikeId;
 import com.videosharing.videosharingspringboot.model.CommentRelation;
 import com.videosharing.videosharingspringboot.model.CommentStatus;
 import com.videosharing.videosharingspringboot.model.User;
 import com.videosharing.videosharingspringboot.repository.CommentLikeRepository;
 import com.videosharing.videosharingspringboot.repository.CommentRelationRepository;
-import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -29,17 +27,8 @@ public class CommentLikeService {
     @Transactional
     public void like(User user, Long commentId) {
         CommentRelation relation = visibleRelation(commentId);
-        CommentLikeId id = likeId(commentId, user.getId());
-
-        CommentLike like = new CommentLike();
-        like.setId(id);
-        like.setCreatedAt(Instant.now());
-        try {
-            likes.saveAndFlush(like);
-        } catch (DataIntegrityViolationException exception) {
-            return;
-        }
-        if (relations.incrementVisibleLikeCount(commentId) > 0) {
+        int inserted = likes.insertIfAbsent(commentId, user.getId(), Instant.now());
+        if (inserted > 0 && relations.incrementVisibleLikeCount(commentId) > 0) {
             hotCache.markVideoForHotRefresh(relation.getVideoId());
         }
     }
