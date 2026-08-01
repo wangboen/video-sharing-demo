@@ -5,6 +5,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.data.redis.core.SetOperations;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.data.redis.core.ValueOperations;
 
@@ -19,6 +20,7 @@ import static org.mockito.Mockito.when;
 class HotCommentCacheServiceTest {
     @Mock private StringRedisTemplate redisTemplate;
     @Mock private ValueOperations<String, String> valueOperations;
+    @Mock private SetOperations<String, String> setOperations;
 
     @Test
     void writesOrderedIdsToTheConfiguredKeyWithConfiguredTtl() {
@@ -44,5 +46,29 @@ class HotCommentCacheServiceTest {
         assertThatThrownBy(() -> service.putHotCommentIds(42L, 3, 10L, List.of(101L)))
                 .isInstanceOf(RuntimeException.class)
                 .hasMessage("redis unavailable");
+    }
+
+    @Test
+    void strictCandidateMarkSurfacesRedisFailures() {
+        CommentProperties properties = new CommentProperties();
+        when(redisTemplate.opsForSet()).thenReturn(setOperations);
+        org.mockito.Mockito.doThrow(new RuntimeException("redis unavailable"))
+                .when(setOperations).add("comment:hot-refresh:candidates", "42");
+        HotCommentCacheService service = new HotCommentCacheService(redisTemplate, properties);
+
+        assertThatThrownBy(() -> service.markVideoForHotRefreshOrThrow(42L))
+                .isInstanceOf(RuntimeException.class)
+                .hasMessage("redis unavailable");
+    }
+
+    @Test
+    void bestEffortCandidateMarkDoesNotSurfaceRedisFailures() {
+        CommentProperties properties = new CommentProperties();
+        when(redisTemplate.opsForSet()).thenReturn(setOperations);
+        org.mockito.Mockito.doThrow(new RuntimeException("redis unavailable"))
+                .when(setOperations).add("comment:hot-refresh:candidates", "42");
+        HotCommentCacheService service = new HotCommentCacheService(redisTemplate, properties);
+
+        service.markVideoForHotRefresh(42L);
     }
 }

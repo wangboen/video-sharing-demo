@@ -33,7 +33,11 @@ public class HotCommentRefreshJob {
                         hotRelations.stream().map(relation -> relation.getCommentId()).toList());
             } catch (RuntimeException exception) {
                 log.warn("Failed to refresh hot comment cache for videoId={}", videoId, exception);
-                cache.markVideoForHotRefresh(videoId);
+                try {
+                    cache.markVideoForHotRefreshOrThrow(videoId);
+                } catch (RuntimeException requeueException) {
+                    log.warn("Failed to requeue hot comment refresh candidate videoId={}", videoId, requeueException);
+                }
             }
         }
     }

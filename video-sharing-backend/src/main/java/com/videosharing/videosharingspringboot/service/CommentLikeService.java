@@ -7,6 +7,7 @@ import com.videosharing.videosharingspringboot.model.CommentStatus;
 import com.videosharing.videosharingspringboot.model.User;
 import com.videosharing.videosharingspringboot.repository.CommentLikeRepository;
 import com.videosharing.videosharingspringboot.repository.CommentRelationRepository;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -29,41 +30,34 @@ public class CommentLikeService {
     public void like(User user, Long commentId) {
         CommentRelation relation = visibleRelation(commentId);
         CommentLikeId id = likeId(commentId, user.getId());
-        if (likes.existsById(id)) {
-            return;
-        }
 
         CommentLike like = new CommentLike();
         like.setId(id);
         like.setCreatedAt(Instant.now());
-        likes.save(like);
-        relation.setLikeCount(safeLikeCount(relation) + 1);
-        relations.save(relation);
-        hotCache.markVideoForHotRefresh(relation.getVideoId());
+        try {
+            likes.saveAndFlush(like);
+        } catch (DataIntegrityViolationException exception) {
+            return;
+        }
+        if (relations.incrementVisibleLikeCount(commentId) > 0) {
+            hotCache.markVideoForHotRefresh(relation.getVideoId());
+        }
     }
 
     @Transactional
     public void unlike(User user, Long commentId) {
         CommentRelation relation = visibleRelation(commentId);
         CommentLikeId id = likeId(commentId, user.getId());
-        if (!likes.existsById(id)) {
-            return;
-        }
 
-        likes.deleteById(id);
-        relation.setLikeCount(Math.max(0L, safeLikeCount(relation) - 1));
-        relations.save(relation);
-        hotCache.markVideoForHotRefresh(relation.getVideoId());
+        if (likes.deleteExisting(id) > 0 && relations.decrementVisibleLikeCount(commentId) > 0) {
+            hotCache.markVideoForHotRefresh(relation.getVideoId());
+        }
     }
 
     private CommentRelation visibleRelation(Long commentId) {
         return relations.findById(commentId)
                 .filter(relation -> relation.getStatus() == CommentStatus.VISIBLE)
                 .orElseThrow(CommentNotFoundException::new);
-    }
-
-    private long safeLikeCount(CommentRelation relation) {
-        return relation.getLikeCount() == null ? 0L : relation.getLikeCount();
     }
 
     private CommentLikeId likeId(Long commentId, Long userId) {

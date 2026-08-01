@@ -55,7 +55,7 @@ class HotCommentRefreshJobTest {
 
         job.refreshHotComments();
 
-        verify(cache).markVideoForHotRefresh(42L);
+        verify(cache).markVideoForHotRefreshOrThrow(42L);
     }
 
     @Test
@@ -74,7 +74,25 @@ class HotCommentRefreshJobTest {
 
         job.refreshHotComments();
 
-        verify(cache).markVideoForHotRefresh(42L);
+        verify(cache).markVideoForHotRefreshOrThrow(42L);
+    }
+
+    @Test
+    void continuesWhenRequeueFailsAfterRefreshFailure() {
+        CommentProperties properties = new CommentProperties();
+        properties.setHotRefreshBatchSize(2);
+        properties.setFeaturedLimit(3);
+        properties.setFeaturedMinLikes(10L);
+        HotCommentRefreshJob job = new HotCommentRefreshJob(cache, relations, properties);
+        when(cache.popRefreshCandidates(2)).thenReturn(Set.of(42L));
+        when(relations.findTopHotVisible(eq(42L), eq(10L), any(Pageable.class)))
+                .thenThrow(new RuntimeException("mysql unavailable"));
+        doThrow(new RuntimeException("redis unavailable"))
+                .when(cache).markVideoForHotRefreshOrThrow(42L);
+
+        job.refreshHotComments();
+
+        verify(cache).markVideoForHotRefreshOrThrow(42L);
     }
 
     private CommentRelation relation(Long id, Long likes, String createdAt) {

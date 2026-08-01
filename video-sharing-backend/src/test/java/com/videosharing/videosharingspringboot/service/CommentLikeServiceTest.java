@@ -7,9 +7,9 @@ import com.videosharing.videosharingspringboot.model.CommentStatus;
 import com.videosharing.videosharingspringboot.model.User;
 import com.videosharing.videosharingspringboot.repository.CommentLikeRepository;
 import com.videosharing.videosharingspringboot.repository.CommentRelationRepository;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
-import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
@@ -17,6 +17,7 @@ import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
@@ -33,30 +34,26 @@ class CommentLikeServiceTest {
         CommentLikeService service = new CommentLikeService(relations, likes, hotCache);
         CommentRelation relation = visibleRelation(101L, 42L, 5L);
         when(relations.findById(101L)).thenReturn(Optional.of(relation));
-        when(likes.existsById(likeId(101L, 7L))).thenReturn(false);
+        when(relations.incrementVisibleLikeCount(101L)).thenReturn(1);
 
         service.like(user(7L), 101L);
 
-        assertThat(relation.getLikeCount()).isEqualTo(6L);
-        verify(relations).save(relation);
+        verify(likes).saveAndFlush(any(CommentLike.class));
+        verify(relations).incrementVisibleLikeCount(101L);
         verify(hotCache).markVideoForHotRefresh(42L);
-        ArgumentCaptor<CommentLike> likeCaptor = ArgumentCaptor.forClass(CommentLike.class);
-        verify(likes).save(likeCaptor.capture());
-        assertThat(likeCaptor.getValue().getId()).isEqualTo(likeId(101L, 7L));
     }
 
     @Test
-    void duplicateLikeDoesNotIncrementOrMarkRefresh() {
+    void duplicateLikeConstraintViolationDoesNotIncrementMarkRefreshOrSurface() {
         CommentLikeService service = new CommentLikeService(relations, likes, hotCache);
         CommentRelation relation = visibleRelation(101L, 42L, 5L);
         when(relations.findById(101L)).thenReturn(Optional.of(relation));
-        when(likes.existsById(likeId(101L, 7L))).thenReturn(true);
+        when(likes.saveAndFlush(any(CommentLike.class)))
+                .thenThrow(new DataIntegrityViolationException("duplicate like"));
 
         service.like(user(7L), 101L);
 
-        assertThat(relation.getLikeCount()).isEqualTo(5L);
-        verify(relations, never()).save(relation);
-        verify(likes, never()).save(org.mockito.ArgumentMatchers.any(CommentLike.class));
+        verify(relations, never()).incrementVisibleLikeCount(101L);
         verifyNoInteractions(hotCache);
     }
 
@@ -65,13 +62,13 @@ class CommentLikeServiceTest {
         CommentLikeService service = new CommentLikeService(relations, likes, hotCache);
         CommentRelation relation = visibleRelation(101L, 42L, 5L);
         when(relations.findById(101L)).thenReturn(Optional.of(relation));
-        when(likes.existsById(likeId(101L, 7L))).thenReturn(true);
+        when(likes.deleteExisting(likeId(101L, 7L))).thenReturn(1);
+        when(relations.decrementVisibleLikeCount(101L)).thenReturn(1);
 
         service.unlike(user(7L), 101L);
 
-        assertThat(relation.getLikeCount()).isEqualTo(4L);
-        verify(likes).deleteById(likeId(101L, 7L));
-        verify(relations).save(relation);
+        verify(likes).deleteExisting(likeId(101L, 7L));
+        verify(relations).decrementVisibleLikeCount(101L);
         verify(hotCache).markVideoForHotRefresh(42L);
     }
 
@@ -80,13 +77,12 @@ class CommentLikeServiceTest {
         CommentLikeService service = new CommentLikeService(relations, likes, hotCache);
         CommentRelation relation = visibleRelation(101L, 42L, 5L);
         when(relations.findById(101L)).thenReturn(Optional.of(relation));
-        when(likes.existsById(likeId(101L, 7L))).thenReturn(false);
+        when(likes.deleteExisting(likeId(101L, 7L))).thenReturn(0);
 
         service.unlike(user(7L), 101L);
 
-        assertThat(relation.getLikeCount()).isEqualTo(5L);
-        verify(likes, never()).deleteById(likeId(101L, 7L));
-        verify(relations, never()).save(relation);
+        verify(likes).deleteExisting(likeId(101L, 7L));
+        verify(relations, never()).decrementVisibleLikeCount(101L);
         verifyNoInteractions(hotCache);
     }
 

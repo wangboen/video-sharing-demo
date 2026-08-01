@@ -4,6 +4,7 @@ import com.videosharing.videosharingspringboot.model.CommentRelation;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
@@ -39,4 +40,22 @@ public interface CommentRelationRepository extends JpaRepository<CommentRelation
                                                          Pageable pageable);
 
     Page<CommentRelation> findByUserIdAndAnonymizedFalse(Long userId, Pageable pageable);
+
+    @Modifying
+    @Query("""
+            update CommentRelation c
+            set c.likeCount = c.likeCount + 1
+            where c.commentId = :commentId
+              and c.status = com.videosharing.videosharingspringboot.model.CommentStatus.VISIBLE
+            """)
+    int incrementVisibleLikeCount(@Param("commentId") Long commentId);
+
+    @Modifying
+    @Query("""
+            update CommentRelation c
+            set c.likeCount = case when c.likeCount > 0 then c.likeCount - 1 else 0 end
+            where c.commentId = :commentId
+              and c.status = com.videosharing.videosharingspringboot.model.CommentStatus.VISIBLE
+            """)
+    int decrementVisibleLikeCount(@Param("commentId") Long commentId);
 }

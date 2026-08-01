@@ -1,6 +1,8 @@
 package com.videosharing.videosharingspringboot.service;
 
 import com.videosharing.videosharingspringboot.config.CommentProperties;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Service;
 
@@ -10,6 +12,7 @@ import java.util.concurrent.TimeUnit;
 
 @Service
 public class HotCommentCacheService {
+    private static final Logger log = LoggerFactory.getLogger(HotCommentCacheService.class);
     private static final String REFRESH_CANDIDATES_KEY = "comment:hot-refresh:candidates";
 
     private final StringRedisTemplate redisTemplate;
@@ -40,10 +43,14 @@ public class HotCommentCacheService {
 
     public void markVideoForHotRefresh(Long videoId) {
         try {
-            redisTemplate.opsForSet().add(REFRESH_CANDIDATES_KEY, videoId.toString());
-        } catch (RuntimeException ignored) {
-            // A later mutation can re-mark the video if Redis is temporarily unavailable.
+            markVideoForHotRefreshOrThrow(videoId);
+        } catch (RuntimeException exception) {
+            log.warn("Failed to mark video for hot comment refresh videoId={}", videoId, exception);
         }
+    }
+
+    public void markVideoForHotRefreshOrThrow(Long videoId) {
+        redisTemplate.opsForSet().add(REFRESH_CANDIDATES_KEY, videoId.toString());
     }
 
     public Set<Long> popRefreshCandidates(int maxCount) {
