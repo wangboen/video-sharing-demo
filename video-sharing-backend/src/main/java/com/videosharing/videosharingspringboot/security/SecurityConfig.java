@@ -51,7 +51,7 @@ public class SecurityConfig {
                                 "/api/users/me/videos/*/download/video",
                                 "/api/users/me/videos/*/download/thumbnail",
                                 "/api/users/me/comments", "/api/users/me/comments/*",
-                                "/api/videos/*/comments").hasRole("USER")
+                                "/api/videos/*/comments", "/api/comments/*/like").hasRole("USER")
                         .anyRequest().authenticated())
                 .addFilterBefore(jwtAuthenticationFilter, UsernamePasswordAuthenticationFilter.class)
                 .build();

@@ -3,6 +3,7 @@ package com.videosharing.videosharingspringboot.controller;
 import com.videosharing.videosharingspringboot.dto.CommentResponse;
 import com.videosharing.videosharingspringboot.model.User;
 import com.videosharing.videosharingspringboot.service.CommentCommandService;
+import com.videosharing.videosharingspringboot.service.CommentLikeService;
 import com.videosharing.videosharingspringboot.service.CommentQueryService;
 import com.videosharing.videosharingspringboot.service.UserCommentService;
 import com.videosharing.videosharingspringboot.service.UserService;
@@ -27,6 +28,7 @@ import static org.mockito.Mockito.when;
 class UserCommentControllerTest {
     @Mock private CommentCommandService commands;
     @Mock private CommentQueryService queries;
+    @Mock private CommentLikeService likes;
     @Mock private UserCommentService userComments;
     @Mock private UserService users;
     @Mock private Authentication authentication;
@@ -76,7 +78,7 @@ class UserCommentControllerTest {
 
     private CommentController controller() {
         when(authentication.getName()).thenReturn("alice");
-        return new CommentController(commands, queries, userComments, users);
+        return new CommentController(commands, queries, likes, userComments, users);
     }
 
     private User user() {

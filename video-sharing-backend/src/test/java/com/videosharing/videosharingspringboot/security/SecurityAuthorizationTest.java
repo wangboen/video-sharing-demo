@@ -69,6 +69,14 @@ class SecurityAuthorizationTest {
                 .andExpect(status().isOk());
         mvc.perform(delete("/api/users/me/comments/10").with(user("admin").roles("ADMIN")))
                 .andExpect(status().isForbidden());
+        mvc.perform(post("/api/comments/10/like").with(user("creator").roles("USER")))
+                .andExpect(status().isOk());
+        mvc.perform(post("/api/comments/10/like").with(user("reviewer").roles("REVIEWER")))
+                .andExpect(status().isForbidden());
+        mvc.perform(delete("/api/comments/10/like").with(user("creator").roles("USER")))
+                .andExpect(status().isOk());
+        mvc.perform(delete("/api/comments/10/like").with(user("admin").roles("ADMIN")))
+                .andExpect(status().isForbidden());
     }
 
     @Test
@@ -135,6 +143,16 @@ class SecurityAuthorizationTest {
 
         @DeleteMapping("/api/users/me/comments/{id}")
         ResponseEntity<Void> comment(@PathVariable Long id) {
+            return ResponseEntity.ok().build();
+        }
+
+        @PostMapping("/api/comments/{id}/like")
+        ResponseEntity<Void> likeComment(@PathVariable Long id) {
+            return ResponseEntity.ok().build();
+        }
+
+        @DeleteMapping("/api/comments/{id}/like")
+        ResponseEntity<Void> unlikeComment(@PathVariable Long id) {
             return ResponseEntity.ok().build();
         }
 

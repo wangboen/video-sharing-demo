@@ -6,6 +6,7 @@ import com.videosharing.videosharingspringboot.dto.CreateCommentRequest;
 import com.videosharing.videosharingspringboot.dto.VideoCommentsResponse;
 import com.videosharing.videosharingspringboot.model.User;
 import com.videosharing.videosharingspringboot.service.CommentCommandService;
+import com.videosharing.videosharingspringboot.service.CommentLikeService;
 import com.videosharing.videosharingspringboot.service.CommentQueryService;
 import com.videosharing.videosharingspringboot.service.UserCommentService;
 import com.videosharing.videosharingspringboot.service.UserService;
@@ -27,13 +28,15 @@ import org.springframework.web.bind.annotation.RestController;
 public class CommentController {
     private final CommentCommandService commands;
     private final CommentQueryService queries;
+    private final CommentLikeService likes;
     private final UserCommentService userComments;
     private final UserService users;
 
-    public CommentController(CommentCommandService commands, CommentQueryService queries, UserCommentService userComments,
-                             UserService users) {
+    public CommentController(CommentCommandService commands, CommentQueryService queries, CommentLikeService likes,
+                             UserCommentService userComments, UserService users) {
         this.commands = commands;
         this.queries = queries;
+        this.likes = likes;
         this.userComments = userComments;
         this.users = users;
     }
@@ -59,6 +62,26 @@ public class CommentController {
     @GetMapping("/api/comments/commands/{requestId}")
     public ResponseEntity<CommentCommandStatusResponse> getCommandStatus(@PathVariable String requestId) {
         return queries.getCommandStatus(requestId).map(ResponseEntity::ok).orElseGet(() -> ResponseEntity.notFound().build());
+    }
+
+    @PostMapping("/api/comments/{commentId}/like")
+    public ResponseEntity<Void> likeComment(@PathVariable Long commentId, Authentication authentication) {
+        try {
+            likes.like(currentUser(authentication), commentId);
+            return ResponseEntity.noContent().build();
+        } catch (CommentLikeService.CommentNotFoundException exception) {
+            return ResponseEntity.notFound().build();
+        }
+    }
+
+    @DeleteMapping("/api/comments/{commentId}/like")
+    public ResponseEntity<Void> unlikeComment(@PathVariable Long commentId, Authentication authentication) {
+        try {
+            likes.unlike(currentUser(authentication), commentId);
+            return ResponseEntity.noContent().build();
+        } catch (CommentLikeService.CommentNotFoundException exception) {
+            return ResponseEntity.notFound().build();
+        }
     }
 
     @GetMapping("/api/users/me/comments")

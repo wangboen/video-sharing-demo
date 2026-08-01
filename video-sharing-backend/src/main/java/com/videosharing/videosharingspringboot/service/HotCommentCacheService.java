@@ -33,13 +33,9 @@ public class HotCommentCacheService {
     }
 
     public void putHotCommentIds(Long videoId, int limit, long minLikes, List<Long> commentIds) {
-        try {
-            String value = commentIds.stream().map(String::valueOf).collect(java.util.stream.Collectors.joining(","));
-            redisTemplate.opsForValue().set(hotKey(videoId, limit, minLikes), value,
-                    properties.getHotCacheTtlSeconds(), TimeUnit.SECONDS);
-        } catch (RuntimeException ignored) {
-            // Redis is an optional cache; MySQL remains the fallback.
-        }
+        String value = commentIds.stream().map(String::valueOf).collect(java.util.stream.Collectors.joining(","));
+        redisTemplate.opsForValue().set(hotKey(videoId, limit, minLikes), value,
+                properties.getHotCacheTtlSeconds(), TimeUnit.SECONDS);
     }
 
     public void markVideoForHotRefresh(Long videoId) {

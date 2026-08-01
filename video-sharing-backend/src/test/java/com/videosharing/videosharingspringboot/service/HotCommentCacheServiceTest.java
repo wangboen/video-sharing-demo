@@ -11,6 +11,7 @@ import org.springframework.data.redis.core.ValueOperations;
 import java.util.List;
 import java.util.concurrent.TimeUnit;
 
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -29,5 +30,19 @@ class HotCommentCacheServiceTest {
         service.putHotCommentIds(42L, 3, 10L, List.of(101L, 99L, 88L));
 
         verify(valueOperations).set("comment:video:42:hot:3:10", "101,99,88", 90, TimeUnit.SECONDS);
+    }
+
+    @Test
+    void surfacesRedisWriteFailuresToRefreshJob() {
+        CommentProperties properties = new CommentProperties();
+        properties.setHotCacheTtlSeconds(90);
+        when(redisTemplate.opsForValue()).thenReturn(valueOperations);
+        org.mockito.Mockito.doThrow(new RuntimeException("redis unavailable"))
+                .when(valueOperations).set("comment:video:42:hot:3:10", "101", 90, TimeUnit.SECONDS);
+        HotCommentCacheService service = new HotCommentCacheService(redisTemplate, properties);
+
+        assertThatThrownBy(() -> service.putHotCommentIds(42L, 3, 10L, List.of(101L)))
+                .isInstanceOf(RuntimeException.class)
+                .hasMessage("redis unavailable");
     }
 }
