@@ -25,7 +25,7 @@ async function submit() {
       return
     }
     saveStaffSession(data)
-    await router.push({ name: 'moderation' })
+    await router.push({ name: data.role === 'ADMIN' ? 'reviewers' : 'moderation' })
   } catch (error) {
     errorMessage.value = error.response?.status === 401
       ? '用户名或密码不正确。'

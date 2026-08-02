@@ -100,21 +100,23 @@ class SecurityAuthorizationTest {
     }
 
     @Test
-    void reviewerAndAdminCanModerateButUserCannot() throws Exception {
+    void onlyReviewersCanModerate() throws Exception {
         mvc.perform(post("/api/moderation/videos/claim-next").with(user("creator").roles("USER")))
                 .andExpect(status().isForbidden());
         mvc.perform(post("/api/moderation/videos/claim-next").with(user("reviewer").roles("REVIEWER")))
                 .andExpect(status().isOk());
         mvc.perform(post("/api/moderation/videos/claim-next").with(user("admin").roles("ADMIN")))
-                .andExpect(status().isOk());
+                .andExpect(status().isForbidden());
         mvc.perform(get("/api/moderation/videos/queue").with(user("creator").roles("USER")))
                 .andExpect(status().isForbidden());
         mvc.perform(get("/api/moderation/videos/queue").with(user("reviewer").roles("REVIEWER")))
                 .andExpect(status().isOk());
+        mvc.perform(get("/api/moderation/videos/queue").with(user("admin").roles("ADMIN")))
+                .andExpect(status().isForbidden());
         mvc.perform(post("/api/moderation/videos/10/claim").with(user("creator").roles("USER")))
                 .andExpect(status().isForbidden());
         mvc.perform(post("/api/moderation/videos/10/claim").with(user("admin").roles("ADMIN")))
-                .andExpect(status().isOk());
+                .andExpect(status().isForbidden());
     }
 
     @RestController

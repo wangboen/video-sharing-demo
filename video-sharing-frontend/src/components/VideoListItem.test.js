@@ -25,7 +25,7 @@ describe('VideoListItem', () => {
       },
     })
 
-    expect(wrapper.get('img').attributes('src')).toBe('http://192.168.50.167:8080/media/city-night.jpg')
+    expect(wrapper.get('img').attributes('src')).toBe('http://localhost:8080/media/city-night.jpg')
     expect(wrapper.text()).toContain('夜晚城市')
     expect(wrapper.text()).toContain('Safe list author')
     expect(wrapper.get('a').attributes('href')).toBe('/video/9')

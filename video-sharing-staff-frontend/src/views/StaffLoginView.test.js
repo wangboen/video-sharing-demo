@@ -54,6 +54,20 @@ describe('staff login', () => {
     expect(mocks.push).toHaveBeenCalledWith({ name: 'moderation' })
   })
 
+  it('opens reviewer management after an admin logs in', async () => {
+    mocks.post.mockResolvedValue({
+      data: { token: 'token', username: 'admin', id: 1, role: 'ADMIN' },
+    })
+    const wrapper = mount(StaffLoginView)
+
+    await wrapper.get('#username').setValue('admin')
+    await wrapper.get('#password').setValue('password123')
+    await wrapper.get('form').trigger('submit')
+    await flushPromises()
+
+    expect(mocks.push).toHaveBeenCalledWith({ name: 'reviewers' })
+  })
+
   it('distinguishes invalid credentials from an insufficient role without raw payloads', async () => {
     mocks.post
       .mockRejectedValueOnce({ response: { status: 401, data: 'raw backend credentials error' } })

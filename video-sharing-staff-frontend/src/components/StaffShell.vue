@@ -3,7 +3,7 @@ import { useRouter } from 'vue-router'
 import api from '../services/api'
 import { clearStaffSession } from '../services/staffAuth'
 
-defineProps({
+const props = defineProps({
   user: {
     type: Object,
     default: null,
@@ -11,6 +11,12 @@ defineProps({
 })
 
 const router = useRouter()
+
+function staffHome() {
+  return props.user?.role === 'ADMIN'
+    ? { name: 'reviewers' }
+    : { name: 'moderation' }
+}
 
 async function logout() {
   try {
@@ -27,7 +33,7 @@ async function logout() {
 <template>
   <div class="staff-app">
     <header class="staff-header">
-      <RouterLink class="staff-brand" :to="{ name: 'moderation' }" aria-label="镜鉴审核工作台">
+      <RouterLink class="staff-brand" :to="staffHome()" aria-label="镜鉴员工工作台">
         <span class="staff-brand__mark" aria-hidden="true">鉴</span>
         <span>
           <strong>镜鉴</strong>
@@ -36,7 +42,9 @@ async function logout() {
       </RouterLink>
 
       <nav class="staff-nav" aria-label="员工工作台导航">
-        <RouterLink :to="{ name: 'moderation' }">审核工作台</RouterLink>
+        <RouterLink v-if="user?.role === 'REVIEWER'" :to="{ name: 'moderation' }">
+          审核工作台
+        </RouterLink>
         <RouterLink v-if="user?.role === 'ADMIN'" :to="{ name: 'reviewers' }">
           审核员管理
         </RouterLink>

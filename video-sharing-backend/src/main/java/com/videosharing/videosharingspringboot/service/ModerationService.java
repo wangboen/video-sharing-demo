@@ -205,10 +205,11 @@ public class ModerationService {
     @Transactional
     public void release(Long id, String username, boolean force, Role callerRole) {
         Video video = locked(id);
+        if (callerRole != Role.REVIEWER) {
+            throw new AccessDeniedException("Reviewer role required");
+        }
         if (force) {
-            if (callerRole != Role.ADMIN) {
-                throw new AccessDeniedException("Only admins may force release a lease");
-            }
+            throw new AccessDeniedException("Force release is not available");
         } else if (video.getLeaseOwner() == null
                 || !video.getLeaseOwner().getUsername().equals(username)) {
             throw new ModerationConflictException("The caller does not own this lease");
@@ -389,8 +390,8 @@ public class ModerationService {
     }
 
     private void assertStaffRole(StaffAccount staff) {
-        if (staff.getRole() != Role.REVIEWER && staff.getRole() != Role.ADMIN) {
-            throw new AccessDeniedException("Staff role required");
+        if (staff.getRole() != Role.REVIEWER) {
+            throw new AccessDeniedException("Reviewer role required");
         }
     }
 

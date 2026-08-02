@@ -19,7 +19,7 @@ const global = {
   stubs: {
     RouterLink: {
       props: ['to'],
-      template: '<a :href="to"><slot /></a>',
+      template: '<a :data-route="to.name"><slot /></a>',
     },
   },
 }
@@ -31,7 +31,7 @@ describe('staff application shell', () => {
     mocks.clear.mockReset()
   })
 
-  it('hides reviewer management navigation from reviewers', () => {
+  it('shows role-appropriate navigation', () => {
     const reviewer = mount(StaffShell, {
       props: { user: { username: 'reviewer', role: 'REVIEWER' } },
       slots: { default: '<main>work</main>' },
@@ -42,9 +42,10 @@ describe('staff application shell', () => {
       global,
     })
 
-    expect(reviewer.text()).toContain('审核工作台')
-    expect(reviewer.text()).not.toContain('审核员管理')
-    expect(admin.text()).toContain('审核员管理')
+    expect(reviewer.findAll('[data-route="moderation"]')).toHaveLength(2)
+    expect(reviewer.find('[data-route="reviewers"]').exists()).toBe(false)
+    expect(admin.findAll('[data-route="moderation"]')).toHaveLength(0)
+    expect(admin.findAll('[data-route="reviewers"]')).toHaveLength(2)
   })
 
   it('clears local staff state and returns to login even when logout fails', async () => {

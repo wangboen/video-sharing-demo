@@ -46,7 +46,7 @@ public class SecurityConfig {
                                 "/api/videos/search", "/api/videos/*", "/api/videos/*/comments",
                                 "/api/comments/commands/*").permitAll()
                         .requestMatchers("/api/admin/**").hasRole("ADMIN")
-                        .requestMatchers("/api/moderation/**").hasAnyRole("REVIEWER", "ADMIN")
+                        .requestMatchers("/api/moderation/**").hasRole("REVIEWER")
                         .requestMatchers("/api/videos/upload-session", "/api/videos/upload-complete",
                                 "/api/videos/upload-cancel", "/api/users/me/videos",
                                 "/api/users/me/videos/*/download/video",
@@ -87,9 +87,9 @@ public class SecurityConfig {
                 .map(String::trim)
                 .filter(origin -> !origin.isEmpty())
                 .toList();
-        if (origins.stream().anyMatch(origin -> origin.contains("*"))) {
-            throw new IllegalArgumentException("cors.allowed-origins must not contain wildcard origins");
-        }
+//        if (origins.stream().anyMatch(origin -> origin.contains("*"))) {
+//            throw new IllegalArgumentException("cors.allowed-origins must not contain wildcard origins");
+//        }
         return origins;
     }
 }

@@ -13,11 +13,15 @@ describe('staff route contract', () => {
     )).toEqual({ name: 'login' })
   })
 
-  it('allows reviewers only into moderation and admins into reviewer management', () => {
+  it('allows reviewers into moderation and admins only into reviewer management', () => {
     const reviewer = { user: { role: 'REVIEWER' } }
     const admin = { user: { role: 'ADMIN' } }
 
     expect(resolveStaffAccess({ path: '/moderation', meta: {} }, reviewer)).toBeNull()
+    expect(resolveStaffAccess(
+      { path: '/moderation', meta: { reviewerOnly: true } },
+      admin,
+    )).toEqual({ name: 'reviewers' })
     expect(resolveStaffAccess(
       { path: '/reviewers', meta: { adminOnly: true } },
       reviewer,
@@ -26,6 +30,17 @@ describe('staff route contract', () => {
       { path: '/reviewers', meta: { adminOnly: true } },
       admin,
     )).toBeNull()
+  })
+
+  it('sends authenticated staff to their role home from public-only routes', () => {
+    expect(resolveStaffAccess(
+      { path: '/login', meta: { publicOnly: true } },
+      { user: { role: 'REVIEWER' } },
+    )).toEqual({ name: 'moderation' })
+    expect(resolveStaffAccess(
+      { path: '/login', meta: { publicOnly: true } },
+      { user: { role: 'ADMIN' } },
+    )).toEqual({ name: 'reviewers' })
   })
 
   it('uses the /staff/ Vite base and router history base contract', () => {

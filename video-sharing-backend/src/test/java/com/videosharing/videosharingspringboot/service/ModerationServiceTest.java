@@ -43,12 +43,14 @@ class ModerationServiceTest {
     private FakeObjectStorage objectStorage;
     private StaffAccount reviewer;
     private StaffAccount other;
+    private StaffAccount admin;
     private final Instant now = Instant.parse("2026-07-24T12:00:00Z");
 
     @BeforeEach
     void setUp() {
         reviewer = staff(1L, "reviewer", Role.REVIEWER);
         other = staff(2L, "other", Role.REVIEWER);
+        admin = staff(3L, "admin", Role.ADMIN);
         Clock clock = Clock.fixed(now, ZoneOffset.UTC);
         objectStorage = new FakeObjectStorage();
         service = new ModerationService(videos, staffAccounts, Duration.ofMinutes(15), clock, objectStorage,
@@ -142,6 +144,26 @@ class ModerationServiceTest {
     }
 
     @Test
+    void adminCannotReadModerationQueue() {
+        when(staffAccounts.findByUsername("admin")).thenReturn(Optional.of(admin));
+
+        assertThrows(org.springframework.security.access.AccessDeniedException.class,
+                () -> service.queue("admin", 20));
+        verify(videos, never()).findActiveLeaseForOwner(any(), any(), any());
+        verify(videos, never()).findClaimable(any(), any(), any());
+    }
+
+    @Test
+    void adminCannotClaimModerationWork() {
+        when(staffAccounts.findByUsernameForUpdate("admin")).thenReturn(Optional.of(admin));
+
+        assertThrows(org.springframework.security.access.AccessDeniedException.class,
+                () -> service.claimNext("admin"));
+        verify(videos, never()).findActiveLeaseForOwner(any(), any(), any());
+        verify(videos, never()).findClaimableForUpdate(any(), any(), any());
+    }
+
+    @Test
     void claimByIdRejectsAnotherReviewersActiveLease() {
         Video leased = pending(10L);
         leased.setLeaseOwner(other);
@@ -191,7 +213,7 @@ class ModerationServiceTest {
     }
 
     @Test
-    void forceReleaseRequiresAdmin() {
+    void forceReleaseIsNotAvailableToReviewers() {
         Video leased = pending(10L);
         leased.setLeaseOwner(other);
         when(videos.findByIdForUpdate(10L)).thenReturn(Optional.of(leased));
@@ -200,19 +222,19 @@ class ModerationServiceTest {
     }
 
     @Test
-    void adminMayForceReleaseAnotherReviewersLease() {
+    void adminCannotForceReleaseAnotherReviewersLease() {
         Video leased = pending(10L);
         leased.setLeaseOwner(other);
         leased.setClaimedAt(now.minusSeconds(60));
         leased.setLeaseExpiresAt(now.plusSeconds(60));
         when(videos.findByIdForUpdate(10L)).thenReturn(Optional.of(leased));
-        when(videos.save(leased)).thenReturn(leased);
 
-        service.release(10L, "admin", true, Role.ADMIN);
+        assertThrows(org.springframework.security.access.AccessDeniedException.class,
+                () -> service.release(10L, "admin", true, Role.ADMIN));
 
-        assertNull(leased.getLeaseOwner());
-        assertNull(leased.getClaimedAt());
-        assertNull(leased.getLeaseExpiresAt());
+        assertEquals(other, leased.getLeaseOwner());
+        assertEquals(now.minusSeconds(60), leased.getClaimedAt());
+        assertEquals(now.plusSeconds(60), leased.getLeaseExpiresAt());
     }
 
     @Test
