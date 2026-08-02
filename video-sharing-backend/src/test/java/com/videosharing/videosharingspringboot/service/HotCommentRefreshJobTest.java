@@ -51,7 +51,7 @@ class HotCommentRefreshJobTest {
         HotCommentRefreshJob job = new HotCommentRefreshJob(cache, relations, properties);
         when(cache.popRefreshCandidates(2)).thenReturn(Set.of(42L));
         when(relations.findTopHotVisible(eq(42L), eq(10L), any(Pageable.class)))
-                .thenThrow(new RuntimeException("mysql unavailable"));
+                .thenThrow(new RuntimeException("postgres unavailable"));
 
         job.refreshHotComments();
 
@@ -86,7 +86,7 @@ class HotCommentRefreshJobTest {
         HotCommentRefreshJob job = new HotCommentRefreshJob(cache, relations, properties);
         when(cache.popRefreshCandidates(2)).thenReturn(Set.of(42L));
         when(relations.findTopHotVisible(eq(42L), eq(10L), any(Pageable.class)))
-                .thenThrow(new RuntimeException("mysql unavailable"));
+                .thenThrow(new RuntimeException("postgres unavailable"));
         doThrow(new RuntimeException("redis unavailable"))
                 .when(cache).markVideoForHotRefreshOrThrow(42L);
 

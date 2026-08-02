@@ -1,12 +1,12 @@
-# Video Comment System Implementation Plan
+﻿# Video Comment System Implementation Plan
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Build a video comment system where comment creation is accepted by RocketMQ first, persisted asynchronously, read through MySQL indexes plus MongoDB content documents, and hot comments are precomputed into Redis.
+**Goal:** Build a video comment system where comment creation is accepted by RocketMQ first, persisted asynchronously, read through PostgreSQL indexes plus MongoDB content documents, and hot comments are precomputed into Redis.
 
-**Architecture:** The API accepts comment commands, generates Snowflake `commentId`, publishes a RocketMQ command, and returns `202 Accepted`. A consumer writes MongoDB comment content first and MySQL relation/index rows second. Reads use MySQL for visibility, sorting, ownership, and like counts, then batch-load MongoDB content and apply anonymization rules.
+**Architecture:** The API accepts comment commands, generates Snowflake `commentId`, publishes a RocketMQ command, and returns `202 Accepted`. A consumer writes MongoDB comment content first and PostgreSQL relation/index rows second. Reads use PostgreSQL for visibility, sorting, ownership, and like counts, then batch-load MongoDB content and apply anonymization rules.
 
-**Tech Stack:** Spring Boot 3.2.5, Java 17, Spring Data JPA, MySQL, MongoDB, RocketMQ, Redis, Vue 3, Axios, Vitest.
+**Tech Stack:** Spring Boot 3.2.5, Java 17, Spring Data JPA, PostgreSQL, MongoDB, RocketMQ, Redis, Vue 3, Axios, Vitest.
 
 ## Global Constraints
 
@@ -14,7 +14,7 @@
 - RocketMQ receives the publish-comment command before comment content is inserted into persistent storage.
 - MongoDB stores comment content and display snapshot fields, including historical `username`.
 - MongoDB does not store `videoId` or `userId`.
-- MySQL stores comment relation, ownership, status, sorting fields, like count, and anonymization state.
+- PostgreSQL stores comment relation, ownership, status, sorting fields, like count, and anonymization state.
 - User rename does not rewrite historical comment usernames.
 - User comment delete means anonymize the specified comment; the comment remains visible under the video.
 - Hot comments are refreshed into Redis by backend scheduled jobs.
@@ -29,15 +29,15 @@
 
 - `video-sharing-backend/pom.xml`: add MongoDB and RocketMQ dependencies.
 - `video-sharing-backend/src/main/resources/application.properties`: add comment, MongoDB, RocketMQ, and Redis settings.
-- `video-sharing-backend/src/main/resources/schema.sql`: add MySQL comment relation, like, and command status tables.
+- `video-sharing-backend/src/main/resources/schema.sql`: add PostgreSQL comment relation, like, and command status tables.
 - `video-sharing-backend/src/main/java/com/videosharing/videosharingspringboot/config/CommentProperties.java`: typed configuration for comment limits and cache refresh.
 - `video-sharing-backend/src/main/java/com/videosharing/videosharingspringboot/service/SnowflakeIdGenerator.java`: generate `commentId`.
-- `video-sharing-backend/src/main/java/com/videosharing/videosharingspringboot/model/CommentRelation.java`: MySQL relation/index entity.
+- `video-sharing-backend/src/main/java/com/videosharing/videosharingspringboot/model/CommentRelation.java`: PostgreSQL relation/index entity.
 - `video-sharing-backend/src/main/java/com/videosharing/videosharingspringboot/model/CommentCommandStatus.java`: async command status entity.
-- `video-sharing-backend/src/main/java/com/videosharing/videosharingspringboot/model/CommentLike.java`: MySQL like relation entity.
+- `video-sharing-backend/src/main/java/com/videosharing/videosharingspringboot/model/CommentLike.java`: PostgreSQL like relation entity.
 - `video-sharing-backend/src/main/java/com/videosharing/videosharingspringboot/model/CommentStatus.java`: enum for `VISIBLE`, `HIDDEN`, `DELETED`.
 - `video-sharing-backend/src/main/java/com/videosharing/videosharingspringboot/model/CommentContentDocument.java`: MongoDB comment content document.
-- `video-sharing-backend/src/main/java/com/videosharing/videosharingspringboot/repository/CommentRelationRepository.java`: MySQL index queries.
+- `video-sharing-backend/src/main/java/com/videosharing/videosharingspringboot/repository/CommentRelationRepository.java`: PostgreSQL index queries.
 - `video-sharing-backend/src/main/java/com/videosharing/videosharingspringboot/repository/CommentCommandStatusRepository.java`: command status lookup.
 - `video-sharing-backend/src/main/java/com/videosharing/videosharingspringboot/repository/CommentLikeRepository.java`: like uniqueness and liked-by-me lookup.
 - `video-sharing-backend/src/main/java/com/videosharing/videosharingspringboot/repository/CommentContentRepository.java`: MongoDB batch content lookup.
@@ -73,7 +73,7 @@
 
 **Interfaces:**
 - Produces: `CommentProperties` with getters for `featuredLimit`, `featuredMinLikes`, `pageSizeDefault`, `pageSizeMax`, `maxLength`, and `hotRefreshBatchSize`.
-- Produces: MySQL tables `comment_relations`, `comment_likes`, `comment_command_status`.
+- Produces: PostgreSQL tables `comment_relations`, `comment_likes`, `comment_command_status`.
 
 - [ ] **Step 1: Write failing configuration binding test**
 
@@ -439,7 +439,7 @@ git commit -m "feat: publish comment create commands to RocketMQ"
 
 ---
 
-### Task 4: RocketMQ Consumer Writes MongoDB Then MySQL
+### Task 4: RocketMQ Consumer Writes MongoDB Then PostgreSQL
 
 **Files:**
 - Create: `video-sharing-backend/src/main/java/com/videosharing/videosharingspringboot/messaging/CommentCreateConsumer.java`
@@ -448,15 +448,15 @@ git commit -m "feat: publish comment create commands to RocketMQ"
 
 **Interfaces:**
 - Consumes: `CommentCreateCommand`.
-- Produces: MongoDB `comment_contents` document and MySQL `comment_relations` row.
+- Produces: MongoDB `comment_contents` document and PostgreSQL `comment_relations` row.
 
 - [ ] **Step 1: Write consumer persistence test**
 
-Test `persistCreateCommand` writes MongoDB first, then MySQL relation, and stores command status as `COMPLETED`.
+Test `persistCreateCommand` writes MongoDB first, then PostgreSQL relation, and stores command status as `COMPLETED`.
 
 - [ ] **Step 2: Write idempotency test**
 
-Call `persistCreateCommand` twice with the same `commentId`. Verify there is one MongoDB document, one MySQL relation row, and the second call succeeds without duplicate failure.
+Call `persistCreateCommand` twice with the same `commentId`. Verify there is one MongoDB document, one PostgreSQL relation row, and the second call succeeds without duplicate failure.
 
 - [ ] **Step 3: Implement persistence service**
 
@@ -465,11 +465,11 @@ Processing order:
 ```text
 1. If comment_relations has commentId, return success.
 2. Save MongoDB CommentContentDocument with _id = commentId.
-3. Save MySQL CommentRelation with status = VISIBLE, likeCount = 0, anonymized = false.
+3. Save PostgreSQL CommentRelation with status = VISIBLE, likeCount = 0, anonymized = false.
 4. Save or update CommentCommandStatus to COMPLETED.
 ```
 
-If MySQL write fails after MongoDB succeeds, throw so RocketMQ retries. This leaves MongoDB-only content that is safe because reads start from MySQL.
+If PostgreSQL write fails after MongoDB succeeds, throw so RocketMQ retries. This leaves MongoDB-only content that is safe because reads start from PostgreSQL.
 
 - [ ] **Step 4: Implement RocketMQ listener**
 
@@ -490,12 +490,12 @@ Expected: PASS.
 
 ```bash
 git add video-sharing-backend/src/main/java/com/videosharing/videosharingspringboot/messaging/CommentCreateConsumer.java video-sharing-backend/src/main/java/com/videosharing/videosharingspringboot/service/CommentPersistenceService.java video-sharing-backend/src/test/java/com/videosharing/videosharingspringboot/service/CommentPersistenceServiceTest.java
-git commit -m "feat: consume comment commands into MongoDB and MySQL"
+git commit -m "feat: consume comment commands into MongoDB and PostgreSQL"
 ```
 
 ---
 
-### Task 5: Comment Read API With MySQL Index And MongoDB KV
+### Task 5: Comment Read API With PostgreSQL Index And MongoDB KV
 
 **Files:**
 - Create: `video-sharing-backend/src/main/java/com/videosharing/videosharingspringboot/dto/CommentResponse.java`
@@ -513,7 +513,7 @@ git commit -m "feat: consume comment commands into MongoDB and MySQL"
 
 - [ ] **Step 1: Test read composition**
 
-Verify featured comments are selected separately, normal comments are time ordered, duplicated featured IDs are excluded from normal comments, MongoDB details are joined, and MongoDB result order is normalized to MySQL order.
+Verify featured comments are selected separately, normal comments are time ordered, duplicated featured IDs are excluded from normal comments, MongoDB details are joined, and MongoDB result order is normalized to PostgreSQL order.
 
 - [ ] **Step 2: Test anonymized display**
 
@@ -547,8 +547,8 @@ String nextCursor;
 Read sequence:
 
 ```text
-1. Load featured IDs from HotCommentCacheService or MySQL fallback.
-2. Load normal relations from MySQL time index.
+1. Load featured IDs from HotCommentCacheService or PostgreSQL fallback.
+2. Load normal relations from PostgreSQL time index.
 3. Remove featured IDs from normal relation list.
 4. Batch load MongoDB documents by commentId.
 5. Batch load likedByMe if authentication is a user.
@@ -691,7 +691,7 @@ Verify `putHotCommentIds(videoId, limit, minLikes, ids)` writes the exact key an
 
 - [ ] **Step 2: Test candidate refresh**
 
-Given candidate video IDs in Redis and MySQL hot relations, verify the job refreshes the hot key with comment IDs in hot order.
+Given candidate video IDs in Redis and PostgreSQL hot relations, verify the job refreshes the hot key with comment IDs in hot order.
 
 - [ ] **Step 3: Implement cache service**
 
@@ -710,7 +710,7 @@ Run every 30 seconds:
 
 ```text
 1. Pop up to comments.hotRefreshBatchSize video IDs.
-2. For each video, query MySQL hot relation index.
+2. For each video, query PostgreSQL hot relation index.
 3. Write Redis ordered comment ID list.
 4. Continue on individual video failure and log the failed videoId.
 ```
@@ -858,7 +858,7 @@ Expected: PASS.
 
 - [ ] **Step 3: Manual API smoke with infrastructure running**
 
-With MySQL, MongoDB, Redis, and RocketMQ running:
+With PostgreSQL, MongoDB, Redis, and RocketMQ running:
 
 ```text
 1. Login as user.
@@ -896,6 +896,6 @@ git commit -m "test: verify comment system integration"
 
 ## Self-Review
 
-- Spec coverage: RocketMQ-first publishing is covered in Tasks 3 and 4. Snowflake IDs are covered in Task 3. MongoDB content and MySQL relations are covered in Tasks 1, 2, 4, and 5. Redis hot comment refresh is covered in Task 7. Anonymous delete is covered in Task 6. Frontend publishing, reading, and personal-page delete are covered in Task 8.
+- Spec coverage: RocketMQ-first publishing is covered in Tasks 3 and 4. Snowflake IDs are covered in Task 3. MongoDB content and PostgreSQL relations are covered in Tasks 1, 2, 4, and 5. Redis hot comment refresh is covered in Task 7. Anonymous delete is covered in Task 6. Frontend publishing, reading, and personal-page delete are covered in Task 8.
 - Placeholder scan: no `TBD`, `TODO`, or deferred behavior remains. Each task has concrete files, interfaces, steps, test commands, and expected outcomes.
 - Type consistency: `commentId`, `requestId`, `anonymized`, `featuredLimit`, and `featuredMinLikes` are used consistently across DTOs, services, repositories, and APIs.

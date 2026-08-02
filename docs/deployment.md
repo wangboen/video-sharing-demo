@@ -17,7 +17,7 @@ TLS terminator or load balancer is mandatory. The Nginx listener on `127.0.0.1:8
 - JDK 17
 - Maven 3.9+
 - Node.js 20.17+，npm 11.12.x 推荐用于审核端前端
-- MySQL 8+
+- PostgreSQL 14+
 - Redis 6+
 - Nginx
 - HTTPS 证书和 TLS 终止层，例如云负载均衡、Caddy、Nginx TLS server 或其他网关
@@ -29,9 +29,9 @@ TLS terminator or load balancer is mandatory. The Nginx listener on `127.0.0.1:8
 | Spring Boot | `127.0.0.1:8080` | 后端 API |
 | Nginx | `127.0.0.1:8081` | 本机明文入口，只给 TLS 终止层访问 |
 | Redis | `127.0.0.1:6379` | JWT 会话存储 |
-| MySQL | `127.0.0.1:3306` | 业务数据库 |
+| PostgreSQL | `127.0.0.1:5432` | 业务数据库 |
 
-生产环境不要直接暴露 Spring Boot、Redis、MySQL 或 Nginx 的 `8081` 明文端口。
+生产环境不要直接暴露 Spring Boot、Redis、PostgreSQL 或 Nginx 的 `8081` 明文端口。
 
 ## 二、生产目录规划
 
@@ -63,7 +63,7 @@ sudo chown -R app:app /srv/video-sharing
 
 | 环境变量 | 示例 | 说明 |
 | --- | --- | --- |
-| `DB_URL` | `jdbc:mysql://db.example.com:3306/video_sharing?useSSL=true&serverTimezone=UTC` | 生产数据库 JDBC URL |
+| `DB_URL` | `jdbc:postgresql://db.example.com:5432/video_sharing` | 生产数据库 JDBC URL |
 | `DB_USERNAME` | `video_app` | 最小权限数据库账号 |
 | `DB_PASSWORD` | `********` | 数据库密码 |
 | `JWT_SECRET` | `openssl rand -base64 32` 生成值 | JWT 签名密钥，必须足够长且唯一 |
@@ -147,7 +147,7 @@ sudo rsync -a --delete dist/ /srv/video-sharing/staff/dist/
 开发环境如果前端和后端不同源，可以在 `.env` 中设置：
 
 ```bash
-VITE_API_BASE_URL=http://localhost:8080
+VITE_API_BASE_URL=http://192.168.50.167:8080
 ```
 
 ## 六、构建并启动后端
@@ -162,7 +162,7 @@ mvn clean package
 启动示例：
 
 ```bash
-export DB_URL='jdbc:mysql://127.0.0.1:3306/video_sharing?useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=UTC'
+export DB_URL='jdbc:postgresql://127.0.0.1:5432/video_sharing'
 export DB_USERNAME='video_app'
 export DB_PASSWORD='replace-with-strong-password'
 export JWT_SECRET='replace-with-a-base64-32-byte-or-longer-secret'
@@ -234,7 +234,7 @@ sudo systemctl reload nginx
 
 建议按以下顺序启动或发布：
 
-1. MySQL
+1. PostgreSQL
 2. Redis
 3. Spring Boot 后端
 4. Nginx

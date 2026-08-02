@@ -73,6 +73,21 @@ class CommentLikeServiceTest {
     }
 
     @Test
+    void postgresDuplicateLikeConstraintViolationDoesNotIncrementMarkRefreshOrSurface() {
+        CommentLikeService service = new CommentLikeService(relations, likes, hotCache);
+        CommentRelation relation = visibleRelation(101L, 42L, 5L);
+        when(relations.findById(101L)).thenReturn(Optional.of(relation));
+        when(likes.insertIfAbsent(eq(101L), eq(7L), any()))
+                .thenThrow(new DataIntegrityViolationException("duplicate like",
+                        new ConstraintViolationException("duplicate key", null, "comment_likes_pkey")));
+
+        service.like(user(7L), 101L);
+
+        verify(relations, never()).incrementVisibleLikeCount(101L);
+        verifyNoInteractions(hotCache);
+    }
+
+    @Test
     void nonDuplicateLikeConstraintViolationSurfacesWithoutIncrementOrRefresh() {
         CommentLikeService service = new CommentLikeService(relations, likes, hotCache);
         CommentRelation relation = visibleRelation(101L, 42L, 5L);

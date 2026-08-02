@@ -70,7 +70,9 @@ public class CommentLikeService {
         Throwable cause = exception;
         while (cause != null) {
             if (cause instanceof ConstraintViolationException constraintViolation) {
-                return "PRIMARY".equalsIgnoreCase(constraintViolation.getConstraintName());
+                String constraintName = constraintViolation.getConstraintName();
+                return "PRIMARY".equalsIgnoreCase(constraintName)
+                        || "comment_likes_pkey".equalsIgnoreCase(constraintName);
             }
             cause = cause.getCause();
         }
