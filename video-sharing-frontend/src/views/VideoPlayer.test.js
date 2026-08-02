@@ -6,6 +6,7 @@ const mocks = vi.hoisted(() => ({
   get: vi.fn(),
   post: vi.fn(),
   delete: vi.fn(),
+  getAuthToken: vi.fn(),
   getStoredUser: vi.fn(),
   route: { params: { id: 'A' } },
 }))
@@ -19,6 +20,7 @@ vi.mock('../services/api', () => ({
 }))
 
 vi.mock('../services/auth', () => ({
+  getAuthToken: mocks.getAuthToken,
   getStoredUser: mocks.getStoredUser,
 }))
 
@@ -51,6 +53,8 @@ describe('VideoPlayer', () => {
     mocks.get.mockReset()
     mocks.post.mockReset()
     mocks.delete.mockReset()
+    mocks.getAuthToken.mockReset()
+    mocks.getAuthToken.mockReturnValue('token-1')
     mocks.getStoredUser.mockReturnValue({ username: 'vision-user' })
     mocks.route.params = reactive({ id: 'A' })
   })
@@ -61,7 +65,11 @@ describe('VideoPlayer', () => {
     const wrapper = mount(VideoPlayer, { global })
     await flushPromises()
 
-    expect(mocks.get.mock.calls.map(([url]) => url)).toEqual(['/api/videos', '/api/videos/A/comments'])
+    expect(mocks.get.mock.calls.map(([url]) => url)).toEqual([
+      '/api/videos',
+      '/api/videos/A/comments',
+      '/api/users/me/watch-history/A',
+    ])
     expect(wrapper.text()).toContain('current video')
     expect(wrapper.text()).toContain('recommended video')
   })
@@ -99,8 +107,10 @@ describe('VideoPlayer', () => {
     expect(mocks.get.mock.calls.map(([url]) => url)).toEqual([
       '/api/videos',
       '/api/videos/A/comments',
+      '/api/users/me/watch-history/A',
       '/api/videos',
       '/api/videos/B/comments',
+      '/api/users/me/watch-history/B',
     ])
     expect(wrapper.findAll('.video-actions button').map((button) => button.attributes('aria-pressed'))).toEqual(['false', 'false'])
   })
@@ -144,6 +154,7 @@ describe('VideoPlayer', () => {
       '/api/videos',
       '/api/videos',
       '/api/videos/A/comments',
+      '/api/users/me/watch-history/A',
     ])
     expect(wrapper.text()).toContain('retried recommendation')
   })
@@ -187,5 +198,76 @@ describe('VideoPlayer', () => {
     expect(mocks.post).toHaveBeenCalledWith('/api/videos/A/comments', { content: 'pending comment' })
     expect(wrapper.get('.comment-item--sending').text()).toContain('pending comment')
     expect(wrapper.get('.comment-item--sending').text()).toContain('发送中')
+  })
+  it('shows a friendly comment loading error from the backend message', async () => {
+    const error = new Error('service unavailable')
+    error.response = { status: 503, data: { message: 'Service is temporarily unavailable' } }
+    mocks.get.mockImplementation((url) => {
+      if (url === '/api/videos') return Promise.resolve({ data: [video('A')] })
+      return Promise.reject(error)
+    })
+
+    const wrapper = mount(VideoPlayer, { global })
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('服务暂时不可用，请稍后重试。')
+  })
+
+  it('keeps the comment draft when publishing fails', async () => {
+    const error = new Error('comment service unavailable')
+    error.response = { status: 503, data: { message: 'Comment service is temporarily unavailable' } }
+    mocks.get.mockImplementation((url) => {
+      if (url === '/api/videos') return Promise.resolve({ data: [video('A')] })
+      return Promise.resolve({ data: { featured: [], comments: [], nextCursor: null } })
+    })
+    mocks.post.mockRejectedValue(error)
+
+    const wrapper = mount(VideoPlayer, { global })
+    await flushPromises()
+    await wrapper.get('.comment-composer textarea').setValue('retry me')
+    await wrapper.get('.comment-composer').trigger('submit')
+    await flushPromises()
+
+    expect(wrapper.get('.comment-composer textarea').element.value).toBe('retry me')
+    expect(wrapper.text()).toContain('评论服务暂时不可用，请稍后重试。')
+  })
+
+  it('restores the last watch position for a signed-in viewer', async () => {
+    mocks.get.mockImplementation((url) => {
+      if (url === '/api/videos') return Promise.resolve({ data: [video('A')] })
+      if (url === '/api/users/me/watch-history/A') {
+        return Promise.resolve({ data: { lastPositionSeconds: 38, completed: false } })
+      }
+      return Promise.resolve({ data: { featured: [], comments: [], nextCursor: null } })
+    })
+
+    const wrapper = mount(VideoPlayer, { global })
+    await flushPromises()
+    await nextTick()
+
+    expect(wrapper.get('video').element.currentTime).toBe(38)
+  })
+
+  it('reports watch progress after meaningful playback', async () => {
+    mocks.get.mockImplementation((url) => {
+      if (url === '/api/videos') return Promise.resolve({ data: [video('A')] })
+      if (url === '/api/users/me/watch-history/A') return Promise.resolve({ data: null })
+      return Promise.resolve({ data: { featured: [], comments: [], nextCursor: null } })
+    })
+    mocks.post.mockResolvedValue({})
+
+    const wrapper = mount(VideoPlayer, { global })
+    await flushPromises()
+    const player = wrapper.get('video').element
+    Object.defineProperty(player, 'duration', { configurable: true, value: 100 })
+    player.currentTime = 12
+    await wrapper.get('video').trigger('timeupdate')
+
+    expect(mocks.post).toHaveBeenCalledWith('/api/videos/A/watch-progress', {
+      positionSeconds: 12,
+      durationSeconds: 100,
+      completed: false,
+      eventType: 'heartbeat',
+    })
   })
 })

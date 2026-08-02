@@ -74,6 +74,7 @@ describe('个人中心退出登录', () => {
       },
     })
     mocks.get.mockResolvedValueOnce({ data: [] })
+    mocks.get.mockResolvedValueOnce({ data: [] })
     mocks.get.mockResolvedValueOnce({ data: { url: 'http://minio.local/download/video.mp4' } })
 
     const wrapper = mount(UserDashboard, { global: { stubs: { RouterLink: true } } })
@@ -84,7 +85,7 @@ describe('个人中心退出登录', () => {
     await buttons[0].trigger('click')
     await flushPromises()
 
-    expect(mocks.get).toHaveBeenNthCalledWith(3, '/api/users/me/videos/42/download/video', {
+    expect(mocks.get).toHaveBeenNthCalledWith(4, '/api/users/me/videos/42/download/video', {
       params: { redirect: false },
     })
     expect(mocks.locationAssign).toHaveBeenCalledWith('http://minio.local/download/video.mp4')
@@ -107,6 +108,7 @@ describe('个人中心退出登录', () => {
         totalElements: 7,
       },
     })
+    mocks.get.mockResolvedValueOnce({ data: [] })
     mocks.get.mockResolvedValueOnce({ data: [] })
     mocks.get.mockResolvedValueOnce({
       data: {
@@ -135,7 +137,7 @@ describe('个人中心退出登录', () => {
     await wrapper.get('.submission-page-next').trigger('click')
     await flushPromises()
 
-    expect(mocks.get).toHaveBeenNthCalledWith(3, '/api/users/me/videos', {
+    expect(mocks.get).toHaveBeenNthCalledWith(4, '/api/users/me/videos', {
       params: { page: 1, size: 6 },
     })
     expect(wrapper.text()).toContain('page two')
@@ -169,7 +171,13 @@ describe('个人中心退出登录', () => {
       .mockResolvedValueOnce({ data: [{ commentId: 7, content: 'my comment', createdAt: '2026-08-01T08:00:00Z' }] })
     mocks.delete.mockResolvedValue({})
 
-    const wrapper = mount(UserDashboard, { global: { stubs: { RouterLink: true } } })
+    const wrapper = mount(UserDashboard, {
+      global: {
+        stubs: {
+          RouterLink: { props: ['to'], template: '<a><slot /></a>' },
+        },
+      },
+    })
     await flushPromises()
 
     expect(wrapper.text()).toContain('my comment')
@@ -178,5 +186,59 @@ describe('个人中心退出登录', () => {
 
     expect(mocks.delete).toHaveBeenCalledWith('/api/users/me/comments/7')
     expect(wrapper.text()).not.toContain('my comment')
+  })
+
+  it('loads recent watch history for continuing playback', async () => {
+    mocks.get.mockImplementation((url) => {
+      if (url === '/api/users/me/watch-history') {
+        return Promise.resolve({
+          data: {
+            content: [{
+              video: { id: 88, title: 'continue watching', uploadDate: '2026-08-01T08:00:00Z' },
+              lastPositionSeconds: 45,
+              durationSeconds: 100,
+              progressPercent: 45,
+              completed: false,
+            }],
+          },
+        })
+      }
+      return Promise.resolve({ data: [] })
+    })
+
+    const wrapper = mount(UserDashboard, {
+      global: {
+        stubs: {
+          RouterLink: { props: ['to'], template: '<a><slot /></a>' },
+        },
+      },
+    })
+    await flushPromises()
+
+    expect(mocks.get).toHaveBeenCalledWith('/api/users/me/watch-history', {
+      params: { page: 0, size: 6 },
+    })
+    expect(wrapper.text()).toContain('continue watching')
+    expect(wrapper.text()).toContain('45%')
+  })
+  it('keeps a personal comment visible when anonymizing fails', async () => {
+    const error = new Error('comment not found')
+    error.response = { status: 404, data: { message: 'Comment not found' } }
+    mocks.get.mockImplementation((url) => {
+      if (url === '/api/users/me/comments') {
+        return Promise.resolve({ data: [{ commentId: 8, content: 'keep me', createdAt: '2026-08-01T08:00:00Z' }] })
+      }
+      return Promise.resolve({ data: [] })
+    })
+    mocks.delete.mockRejectedValue(error)
+
+    const wrapper = mount(UserDashboard, { global: { stubs: { RouterLink: true } } })
+    await flushPromises()
+
+    await wrapper.get('.personal-comment-delete').trigger('click')
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('keep me')
+    expect(wrapper.text()).toContain('评论不存在或已不可操作。')
   })
 })

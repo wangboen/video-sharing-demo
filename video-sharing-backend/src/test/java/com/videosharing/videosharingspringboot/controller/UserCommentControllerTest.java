@@ -1,5 +1,6 @@
 package com.videosharing.videosharingspringboot.controller;
 
+import com.videosharing.videosharingspringboot.config.ApiExceptionHandler;
 import com.videosharing.videosharingspringboot.dto.CommentResponse;
 import com.videosharing.videosharingspringboot.model.User;
 import com.videosharing.videosharingspringboot.service.CommentCommandService;
@@ -21,6 +22,7 @@ import java.util.List;
 import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -71,9 +73,9 @@ class UserCommentControllerTest {
         org.mockito.Mockito.doThrow(new UserCommentService.CommentNotFoundException())
                 .when(userComments).anonymizeOwnComment(user, 10L);
 
-        var response = controller.anonymizeOwnComment(10L, authentication);
-
-        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.NOT_FOUND);
+        assertThatThrownBy(() -> controller.anonymizeOwnComment(10L, authentication))
+                .isInstanceOf(ApiExceptionHandler.ResourceNotFoundException.class)
+                .hasMessage("Comment not found");
     }
 
     private CommentController controller() {

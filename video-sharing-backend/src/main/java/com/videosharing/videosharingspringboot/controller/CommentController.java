@@ -1,5 +1,6 @@
 package com.videosharing.videosharingspringboot.controller;
 
+import com.videosharing.videosharingspringboot.config.ApiExceptionHandler;
 import com.videosharing.videosharingspringboot.dto.CommentCommandStatusResponse;
 import com.videosharing.videosharingspringboot.dto.CreateCommentAcceptedResponse;
 import com.videosharing.videosharingspringboot.dto.CreateCommentRequest;
@@ -61,7 +62,8 @@ public class CommentController {
 
     @GetMapping("/api/comments/commands/{requestId}")
     public ResponseEntity<CommentCommandStatusResponse> getCommandStatus(@PathVariable String requestId) {
-        return queries.getCommandStatus(requestId).map(ResponseEntity::ok).orElseGet(() -> ResponseEntity.notFound().build());
+        return queries.getCommandStatus(requestId).map(ResponseEntity::ok)
+                .orElseThrow(() -> new ApiExceptionHandler.ResourceNotFoundException("Comment command not found"));
     }
 
     @PostMapping("/api/comments/{commentId}/like")
@@ -70,7 +72,7 @@ public class CommentController {
             likes.like(currentUser(authentication), commentId);
             return ResponseEntity.noContent().build();
         } catch (CommentLikeService.CommentNotFoundException exception) {
-            return ResponseEntity.notFound().build();
+            throw new ApiExceptionHandler.ResourceNotFoundException("Comment not found");
         }
     }
 
@@ -80,7 +82,7 @@ public class CommentController {
             likes.unlike(currentUser(authentication), commentId);
             return ResponseEntity.noContent().build();
         } catch (CommentLikeService.CommentNotFoundException exception) {
-            return ResponseEntity.notFound().build();
+            throw new ApiExceptionHandler.ResourceNotFoundException("Comment not found");
         }
     }
 
@@ -98,12 +100,15 @@ public class CommentController {
             userComments.anonymizeOwnComment(currentUser(authentication), commentId);
             return ResponseEntity.noContent().build();
         } catch (UserCommentService.CommentNotFoundException exception) {
-            return ResponseEntity.notFound().build();
+            throw new ApiExceptionHandler.ResourceNotFoundException("Comment not found");
         }
     }
 
     private User currentUser(Authentication authentication) {
-        if (authentication == null) throw new IllegalArgumentException("Authentication is required");
-        return users.findByUsername(authentication.getName()).orElseThrow(() -> new IllegalArgumentException("User not found"));
+        if (authentication == null) {
+            throw new ApiExceptionHandler.AuthenticationRequiredException("Authentication is required");
+        }
+        return users.findByUsername(authentication.getName())
+                .orElseThrow(() -> new ApiExceptionHandler.AuthenticationRequiredException("User not found"));
     }
 }

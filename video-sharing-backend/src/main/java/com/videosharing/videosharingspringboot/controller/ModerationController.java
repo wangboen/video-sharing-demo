@@ -1,5 +1,6 @@
 package com.videosharing.videosharingspringboot.controller;
 
+import com.videosharing.videosharingspringboot.config.ApiExceptionHandler;
 import com.videosharing.videosharingspringboot.dto.ModerationDecisionRequest;
 import com.videosharing.videosharingspringboot.dto.ModerationDecisionResponse;
 import com.videosharing.videosharingspringboot.dto.ModerationVideoResponse;
@@ -34,7 +35,7 @@ public class ModerationController {
 
     @PostMapping("/claim-next")
     public ResponseEntity<ModerationVideoResponse> claimNext(Authentication authentication) {
-        return moderation.claimNext(authentication.getName())
+        return moderation.claimNext(authenticatedName(authentication))
                 .map(ResponseEntity::ok)
                 .orElseGet(() -> ResponseEntity.noContent().build());
     }
@@ -42,27 +43,28 @@ public class ModerationController {
     @GetMapping("/queue")
     public List<ModerationVideoResponse> queue(@RequestParam(defaultValue = "20") int limit,
                                                Authentication authentication) {
-        return moderation.queue(authentication.getName(), limit);
+        return moderation.queue(authenticatedName(authentication), limit);
     }
 
     @PostMapping("/{id}/claim")
     public ModerationVideoResponse claim(@PathVariable Long id, Authentication authentication) {
-        return moderation.claim(authentication.getName(), id);
+        return moderation.claim(authenticatedName(authentication), id);
     }
 
     @PostMapping("/{id}/heartbeat")
     public ModerationVideoResponse heartbeat(@PathVariable Long id, Authentication authentication) {
-        return moderation.heartbeat(id, authentication.getName());
+        return moderation.heartbeat(id, authenticatedName(authentication));
     }
 
     @DeleteMapping("/{id}/claim")
     public ResponseEntity<Void> release(@PathVariable Long id,
                                         @RequestParam(defaultValue = "false") boolean force,
                                         Authentication authentication) {
-        Role role = staffAccounts.findByUsername(authentication.getName())
-                .orElseThrow()
+        String username = authenticatedName(authentication);
+        Role role = staffAccounts.findByUsername(username)
+                .orElseThrow(() -> new ApiExceptionHandler.AuthenticationRequiredException("Staff account not found"))
                 .getRole();
-        moderation.release(id, authentication.getName(), force, role);
+        moderation.release(id, username, force, role);
         return ResponseEntity.noContent().build();
     }
 
@@ -70,6 +72,13 @@ public class ModerationController {
     public ModerationDecisionResponse decide(@PathVariable Long id,
                                              Authentication authentication,
                                              @Valid @RequestBody ModerationDecisionRequest request) {
-        return moderation.decide(id, authentication.getName(), request);
+        return moderation.decide(id, authenticatedName(authentication), request);
+    }
+
+    private static String authenticatedName(Authentication authentication) {
+        if (authentication == null) {
+            throw new ApiExceptionHandler.AuthenticationRequiredException("Authentication is required");
+        }
+        return authentication.getName();
     }
 }

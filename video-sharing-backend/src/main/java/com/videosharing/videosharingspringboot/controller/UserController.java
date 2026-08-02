@@ -1,5 +1,6 @@
 package com.videosharing.videosharingspringboot.controller;
 
+import com.videosharing.videosharingspringboot.config.ApiExceptionHandler;
 import com.videosharing.videosharingspringboot.dto.AuthResponse;
 import com.videosharing.videosharingspringboot.dto.LoginRequest;
 import com.videosharing.videosharingspringboot.dto.RegisterRequest;
@@ -36,12 +37,8 @@ public class UserController {
 
     @PostMapping("/register")
     public ResponseEntity<?> registerUser(@Valid @RequestBody RegisterRequest registerRequest) {
-        try {
-            User user = userService.registerUser(registerRequest.getUsername(), registerRequest.getEmail(), registerRequest.getPassword());
-            return new ResponseEntity<>(authResponse("User registered successfully!", user), HttpStatus.CREATED);
-        } catch (RuntimeException e) {
-            return new ResponseEntity<>(e.getMessage(), HttpStatus.BAD_REQUEST);
-        }
+        User user = userService.registerUser(registerRequest.getUsername(), registerRequest.getEmail(), registerRequest.getPassword());
+        return new ResponseEntity<>(authResponse("User registered successfully!", user), HttpStatus.CREATED);
     }
 
     @PostMapping("/login")
@@ -50,12 +47,15 @@ public class UserController {
             User user = userService.loginUser(loginRequest.getUsername(), loginRequest.getPassword());
             return new ResponseEntity<>(authResponse("User logged in successfully!", user), HttpStatus.OK);
         } catch (RuntimeException e) {
-            return new ResponseEntity<>("Invalid username or password", HttpStatus.UNAUTHORIZED);
+            throw new ApiExceptionHandler.AuthenticationRequiredException("Invalid username or password");
         }
     }
 
     @GetMapping("/me")
     public ResponseEntity<UserProfileResponse> currentUser(Authentication authentication) {
+        if (authentication == null) {
+            throw new ApiExceptionHandler.AuthenticationRequiredException("Authentication is required");
+        }
         return userService.findByUsername(authentication.getName())
                 .map(user -> ResponseEntity.ok(UserProfileResponse.from(user)))
                 .orElseGet(() -> ResponseEntity.status(HttpStatus.UNAUTHORIZED).build());
@@ -63,6 +63,9 @@ public class UserController {
 
     @PostMapping("/logout")
     public ResponseEntity<Void> logout(@RequestHeader(HttpHeaders.AUTHORIZATION) String authorization) {
+        if (authorization == null || !authorization.startsWith("Bearer ") || authorization.length() <= "Bearer ".length()) {
+            throw new ApiExceptionHandler.AuthenticationRequiredException("Authentication is required");
+        }
         String token = authorization.substring("Bearer ".length());
         if (jwtService.isTokenValid(token)) {
             redisSessionService.deleteSession(jwtService.extractSessionId(token));

@@ -1,5 +1,6 @@
 package com.videosharing.videosharingspringboot.controller;
 
+import com.videosharing.videosharingspringboot.config.ApiExceptionHandler;
 import com.videosharing.videosharingspringboot.dto.UserSubmissionResponse;
 import com.videosharing.videosharingspringboot.model.User;
 import com.videosharing.videosharingspringboot.service.UserService;
@@ -13,7 +14,6 @@ import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
-import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
 
 import java.net.URI;
@@ -34,8 +34,7 @@ public class UserVideoController {
     public Page<UserSubmissionResponse> list(@RequestParam(defaultValue = "0") int page,
                                              @RequestParam(defaultValue = "10") int size,
                                              Authentication authentication) {
-        User user = users.findByUsername(authentication.getName())
-                .orElseThrow(() -> new CurrentUserNotFoundException());
+        User user = currentUser(authentication);
         int safePage = Math.max(page, 0);
         int safeSize = Math.max(1, Math.min(size, 50));
         return videos.getSubmissions(user, PageRequest.of(safePage, safeSize));
@@ -56,8 +55,7 @@ public class UserVideoController {
     }
 
     private ResponseEntity<?> download(Long id, boolean redirect, Authentication authentication, VideoService.DownloadFile file) {
-        User user = users.findByUsername(authentication.getName())
-                .orElseThrow(() -> new CurrentUserNotFoundException());
+        User user = currentUser(authentication);
         try {
             VideoService.VideoDownloadTarget target = videos.createDownload(user, id, file);
             if (redirect) {
@@ -71,7 +69,11 @@ public class UserVideoController {
         }
     }
 
-    @ResponseStatus(HttpStatus.UNAUTHORIZED)
-    private static class CurrentUserNotFoundException extends RuntimeException {
+    private User currentUser(Authentication authentication) {
+        if (authentication == null) {
+            throw new ApiExceptionHandler.AuthenticationRequiredException("Authentication is required");
+        }
+        return users.findByUsername(authentication.getName())
+                .orElseThrow(() -> new ApiExceptionHandler.AuthenticationRequiredException("User not found"));
     }
 }

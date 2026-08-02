@@ -40,6 +40,17 @@ describe('VideoList', () => {
     mocks.get.mockReset()
   })
 
+  it('shows a friendly service error when the video list fails', async () => {
+    const error = new Error('service unavailable')
+    error.response = { status: 503, data: { message: 'Service is temporarily unavailable' } }
+    mocks.get.mockRejectedValue(error)
+
+    const wrapper = mount(VideoList, { global })
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('服务暂时不可用，请稍后重试。')
+  })
+
   it('shows category-specific empty copy when loaded videos do not match the selected category', async () => {
     mocks.get.mockResolvedValue(page([{ id: 1, title: 'Technology talk', description: '', user: { username: '小林' } }]))
 

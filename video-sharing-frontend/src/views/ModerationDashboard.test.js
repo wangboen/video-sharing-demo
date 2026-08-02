@@ -24,18 +24,23 @@ describe('moderation submissions dashboard', () => {
   })
 
   it('loads every submission with Chinese status labels, rejection reason, and timestamps', async () => {
-    mocks.get.mockResolvedValue({
-      data: [
-        { id: 1, title: 'Pending video', status: 'PENDING', uploadDate: '2026-07-20T10:00:00' },
-        { id: 2, title: 'Approved video', status: 'APPROVED', uploadDate: '2026-07-21T10:00:00', reviewedAt: '2026-07-24T11:00:00' },
-        { id: 3, title: 'Rejected video', status: 'REJECTED', uploadDate: '2026-07-22T10:00:00', reviewedAt: '2026-07-24T12:00:00', rejectionReason: '  Needs a clearer title  ' },
-      ],
-    })
+    const submissions = [
+      { id: 1, title: 'Pending video', status: 'PENDING', uploadDate: '2026-07-20T10:00:00' },
+      { id: 2, title: 'Approved video', status: 'APPROVED', uploadDate: '2026-07-21T10:00:00', reviewedAt: '2026-07-24T11:00:00' },
+      { id: 3, title: 'Rejected video', status: 'REJECTED', uploadDate: '2026-07-22T10:00:00', reviewedAt: '2026-07-24T12:00:00', rejectionReason: '  Needs a clearer title  ' },
+    ]
+    mocks.get.mockImplementation((url) => Promise.resolve({
+      data: url === '/api/users/me/videos'
+        ? { content: submissions, number: 0, totalPages: 1, totalElements: submissions.length }
+        : [],
+    }))
 
     const wrapper = mount(UserDashboard, { global })
     await flushPromises()
 
-    expect(mocks.get).toHaveBeenCalledWith('/api/users/me/videos')
+    expect(mocks.get).toHaveBeenCalledWith('/api/users/me/videos', {
+      params: { page: 0, size: 6 },
+    })
     expect(wrapper.text()).toContain('待审核')
     expect(wrapper.text()).toContain('已通过')
     expect(wrapper.text()).toContain('已驳回')

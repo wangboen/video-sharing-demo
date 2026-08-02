@@ -38,7 +38,7 @@ class CommentQueryServiceTest {
         CommentRelation olderNormal = relation(20L, 3L, false, "2026-07-31T10:00:00Z");
         when(hotCache.getHotCommentIds(42L, 3, 10L)).thenReturn(List.of());
         when(relations.findTopHotVisible(eq(42L), eq(10L), any(Pageable.class))).thenReturn(List.of(featured));
-        when(relations.findVisibleByVideoAfterCursor(eq(42L), any(), any(), any(Pageable.class)))
+        when(relations.findVisibleByVideo(eq(42L), any(Pageable.class)))
                 .thenReturn(List.of(duplicateFeatured, newestNormal, olderNormal));
         when(contents.findAllById(List.of(10L, 30L, 20L)))
                 .thenReturn(List.of(content(20L, "older"), content(10L, "featured"), content(30L, "newest")));
@@ -58,7 +58,7 @@ class CommentQueryServiceTest {
         CommentRelation anonymous = relation(10L, 3L, true, "2026-07-31T12:00:00Z");
         when(hotCache.getHotCommentIds(42L, 3, 10L)).thenReturn(List.of());
         when(relations.findTopHotVisible(eq(42L), eq(10L), any(Pageable.class))).thenReturn(List.of());
-        when(relations.findVisibleByVideoAfterCursor(eq(42L), any(), any(), any(Pageable.class))).thenReturn(List.of(anonymous));
+        when(relations.findVisibleByVideo(eq(42L), any(Pageable.class))).thenReturn(List.of(anonymous));
         when(contents.findAllById(List.of(10L))).thenReturn(List.of(content(10L, "alice")));
 
         var response = service.getVideoComments(42L, null, 20, null);
@@ -83,8 +83,10 @@ class CommentQueryServiceTest {
         when(hotCache.getHotCommentIds(42L, 3, 10L)).thenReturn(List.of());
         when(relations.findTopHotVisible(eq(42L), eq(10L), any(Pageable.class)))
                 .thenReturn(List.of(featuredOne, featuredTwo));
+        when(relations.findVisibleByVideo(eq(42L), any(Pageable.class)))
+                .thenReturn(List.of(featuredOne, featuredTwo, firstNormal));
         when(relations.findVisibleByVideoAfterCursor(eq(42L), any(), any(), any(Pageable.class)))
-                .thenReturn(List.of(featuredOne, featuredTwo, firstNormal), List.of(secondNormal, remainingNormal));
+                .thenReturn(List.of(secondNormal, remainingNormal));
         when(contents.findAllById(any())).thenReturn(List.of(content(10L, "featured-one"), content(11L, "featured-two"),
                 content(20L, "first"), content(21L, "second")));
 
@@ -92,7 +94,8 @@ class CommentQueryServiceTest {
 
         assertThat(response.comments()).extracting(comment -> comment.commentId()).containsExactly(20L, 21L);
         assertThat(response.nextCursor()).isEqualTo("2026-07-31T12:00:00Z|21");
-        verify(relations, times(2)).findVisibleByVideoAfterCursor(eq(42L), any(), any(), any(Pageable.class));
+        verify(relations).findVisibleByVideo(eq(42L), any(Pageable.class));
+        verify(relations).findVisibleByVideoAfterCursor(eq(42L), any(), any(), any(Pageable.class));
     }
 
     @Test
@@ -102,8 +105,9 @@ class CommentQueryServiceTest {
         CommentRelation featured = relation(10L, 100L, false, "2026-07-31T12:00:00Z");
         when(hotCache.getHotCommentIds(42L, 3, 10L)).thenReturn(List.of());
         when(relations.findTopHotVisible(eq(42L), eq(10L), any(Pageable.class))).thenReturn(List.of(featured));
-        when(relations.findVisibleByVideoAfterCursor(eq(42L), any(), any(), any(Pageable.class)))
-                .thenReturn(List.of(normal, featured), List.of());
+        when(relations.findVisibleByVideo(eq(42L), any(Pageable.class)))
+                .thenReturn(List.of(normal, featured));
+        when(relations.findVisibleByVideoAfterCursor(eq(42L), any(), any(), any(Pageable.class))).thenReturn(List.of());
         when(contents.findAllById(any())).thenReturn(List.of(content(10L, "featured"), content(20L, "normal")));
 
         var response = service.getVideoComments(42L, null, 1, null);
@@ -120,16 +124,30 @@ class CommentQueryServiceTest {
         CommentRelation second = relation(19L, 4L, false, "2026-07-31T12:00:00.123456788Z");
         when(hotCache.getHotCommentIds(42L, 3, 10L)).thenReturn(List.of());
         when(relations.findTopHotVisible(eq(42L), eq(10L), any(Pageable.class))).thenReturn(List.of());
-        when(relations.findVisibleByVideoAfterCursor(eq(42L), any(), any(), any(Pageable.class)))
-                .thenReturn(List.of(first, second), List.of());
+        when(relations.findVisibleByVideo(eq(42L), any(Pageable.class))).thenReturn(List.of(first, second));
+        when(relations.findVisibleByVideoAfterCursor(eq(42L), any(), any(), any(Pageable.class))).thenReturn(List.of());
         when(contents.findAllById(List.of(20L))).thenReturn(List.of(content(20L, "first")));
 
         var firstPage = service.getVideoComments(42L, null, 1, null);
         service.getVideoComments(42L, firstPage.nextCursor(), 1, null);
 
         org.mockito.ArgumentCaptor<Instant> cursors = org.mockito.ArgumentCaptor.forClass(Instant.class);
-        verify(relations, times(2)).findVisibleByVideoAfterCursor(eq(42L), cursors.capture(), any(), any(Pageable.class));
-        assertThat(cursors.getAllValues().get(1)).isEqualTo(preciseTime);
+        verify(relations).findVisibleByVideoAfterCursor(eq(42L), cursors.capture(), any(), any(Pageable.class));
+        assertThat(cursors.getValue()).isEqualTo(preciseTime);
+    }
+
+    @Test
+    void usesDedicatedInitialPageQueryWithoutNullCursorParameters() {
+        CommentQueryService service = service();
+        when(hotCache.getHotCommentIds(42L, 3, 10L)).thenReturn(List.of());
+        when(relations.findTopHotVisible(eq(42L), eq(10L), any(Pageable.class))).thenReturn(List.of());
+        when(relations.findVisibleByVideo(eq(42L), any(Pageable.class))).thenReturn(List.of());
+
+        service.getVideoComments(42L, null, 20, null);
+
+        verify(relations).findVisibleByVideo(eq(42L), any(Pageable.class));
+        org.mockito.Mockito.verify(relations, org.mockito.Mockito.never())
+                .findVisibleByVideoAfterCursor(eq(42L), any(), any(), any(Pageable.class));
     }
 
     private CommentQueryService service() {

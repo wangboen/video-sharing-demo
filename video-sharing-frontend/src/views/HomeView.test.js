@@ -39,6 +39,21 @@ describe('HomeView', () => {
     expect(wrapper.find('.video-search').exists()).toBe(false)
   })
 
+  it('shows a friendly service error when recommendations fail', async () => {
+    const error = new Error('service unavailable')
+    error.response = { status: 503, data: { message: 'Service is temporarily unavailable' } }
+    mocks.get.mockResolvedValue({
+      get data() {
+        throw error
+      },
+    })
+
+    const wrapper = mount(HomeView, { global })
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('服务暂时不可用，请稍后重试。')
+  })
+
   it('keeps category-no-match copy distinct from an empty library', async () => {
     mocks.get.mockResolvedValue(page([{ id: 1, title: 'Technology talk', description: '' }]))
     const wrapper = mount(HomeView, { global })

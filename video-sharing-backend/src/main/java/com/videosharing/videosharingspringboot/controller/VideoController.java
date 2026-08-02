@@ -1,5 +1,6 @@
 package com.videosharing.videosharingspringboot.controller;
 
+import com.videosharing.videosharingspringboot.config.ApiExceptionHandler;
 import com.videosharing.videosharingspringboot.model.User;
 import com.videosharing.videosharingspringboot.model.Video;
 import com.videosharing.videosharingspringboot.dto.CompleteUploadRequest;
@@ -7,9 +8,10 @@ import com.videosharing.videosharingspringboot.dto.CancelUploadRequest;
 import com.videosharing.videosharingspringboot.dto.CreateUploadSessionRequest;
 import com.videosharing.videosharingspringboot.dto.PublicVideoResponse;
 import com.videosharing.videosharingspringboot.dto.VideoUploadResponse;
+import com.videosharing.videosharingspringboot.dto.WatchProgressRequest;
 import com.videosharing.videosharingspringboot.service.UserService;
 import com.videosharing.videosharingspringboot.service.VideoService;
-import com.videosharing.videosharingspringboot.service.VideoSearchUnavailableException;
+import com.videosharing.videosharingspringboot.service.WatchHistoryService;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.data.domain.Page;
@@ -32,6 +34,9 @@ public class VideoController {
     @Autowired
     private UserService userService; // To fetch user for video upload
 
+    @Autowired
+    private WatchHistoryService watchHistoryService;
+
     @Value("${object-storage.public-base-url:}")
     private String objectStoragePublicBaseUrl;
 
@@ -39,40 +44,26 @@ public class VideoController {
     public ResponseEntity<?> createUploadSession(
             Authentication authentication,
             @RequestBody CreateUploadSessionRequest request) {
-        try {
-            User user = currentUser(authentication);
-            return new ResponseEntity<>(videoService.createUploadSession(user, request), HttpStatus.CREATED);
-        } catch (RuntimeException e) {
-            return new ResponseEntity<>(e.getMessage(), HttpStatus.BAD_REQUEST);
-        }
+        User user = currentUser(authentication);
+        return new ResponseEntity<>(videoService.createUploadSession(user, request), HttpStatus.CREATED);
     }
 
     @PostMapping("/upload-complete")
     public ResponseEntity<?> completeUpload(
             Authentication authentication,
-            @RequestBody CompleteUploadRequest request) {
-        try {
-            User user = currentUser(authentication);
-            Video video = videoService.completeDirectUpload(user, request);
-            return new ResponseEntity<>(VideoUploadResponse.from(video), HttpStatus.CREATED);
-        } catch (IOException e) {
-            return new ResponseEntity<>("Failed to complete upload: " + e.getMessage(), HttpStatus.INTERNAL_SERVER_ERROR);
-        } catch (RuntimeException e) {
-            return new ResponseEntity<>(e.getMessage(), HttpStatus.BAD_REQUEST);
-        }
+            @RequestBody CompleteUploadRequest request) throws IOException {
+        User user = currentUser(authentication);
+        Video video = videoService.completeDirectUpload(user, request);
+        return new ResponseEntity<>(VideoUploadResponse.from(video), HttpStatus.CREATED);
     }
 
     @PostMapping("/upload-cancel")
     public ResponseEntity<?> cancelUpload(
             Authentication authentication,
             @RequestBody CancelUploadRequest request) {
-        try {
-            User user = currentUser(authentication);
-            videoService.cancelDirectUpload(user, request);
-            return ResponseEntity.noContent().build();
-        } catch (RuntimeException e) {
-            return new ResponseEntity<>(e.getMessage(), HttpStatus.BAD_REQUEST);
-        }
+        User user = currentUser(authentication);
+        videoService.cancelDirectUpload(user, request);
+        return ResponseEntity.noContent().build();
     }
 
     @GetMapping
@@ -96,18 +87,34 @@ public class VideoController {
             @RequestParam(defaultValue = "") String q,
             @RequestParam(defaultValue = "0") int page,
             @RequestParam(defaultValue = "12") int size) {
-        try {
-            return ResponseEntity.ok(videoService.searchPublicVideos(q == null ? "" : q.trim(), pageRequest(page, size))
-                    .map(video -> PublicVideoResponse.from(video, objectStoragePublicBaseUrl)));
-        } catch (VideoSearchUnavailableException exception) {
-            return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE)
-                    .body("Video search is temporarily unavailable");
-        }
+        return ResponseEntity.ok(videoService.searchPublicVideos(q == null ? "" : q.trim(), pageRequest(page, size))
+                .map(video -> PublicVideoResponse.from(video, objectStoragePublicBaseUrl)));
+    }
+
+    @PostMapping("/{id}/watch-progress")
+    public ResponseEntity<Void> recordWatchProgress(
+            @PathVariable Long id,
+            Authentication authentication,
+            @RequestBody WatchProgressRequest request) {
+        watchHistoryService.recordProgress(currentUser(authentication), id, request);
+        return ResponseEntity.noContent().build();
+    }
+
+    @PostMapping("/{id}/watch-progress/beacon")
+    public ResponseEntity<Void> recordWatchProgressBeacon(
+            @PathVariable Long id,
+            Authentication authentication,
+            @RequestBody WatchProgressRequest request) {
+        watchHistoryService.recordProgress(currentUser(authentication), id, request);
+        return ResponseEntity.noContent().build();
     }
 
     private User currentUser(Authentication authentication) {
+        if (authentication == null) {
+            throw new ApiExceptionHandler.AuthenticationRequiredException("Authentication is required");
+        }
         return userService.findByUsername(authentication.getName())
-                .orElseThrow(() -> new RuntimeException("User not found"));
+                .orElseThrow(() -> new ApiExceptionHandler.AuthenticationRequiredException("User not found"));
     }
 
     private static PageRequest pageRequest(int page, int size) {

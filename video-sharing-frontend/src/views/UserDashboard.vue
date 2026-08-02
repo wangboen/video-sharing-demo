@@ -3,6 +3,7 @@ import { onMounted, ref } from 'vue';
 import { useRouter } from 'vue-router';
 import api from '../services/api';
 import { clearAuth, getStoredUser } from '../services/auth';
+import { friendlyApiError } from '../utils/apiError';
 import { formatDate } from '../utils/video';
 import EmptyState from '../components/EmptyState.vue';
 import ErrorState from '../components/ErrorState.vue';
@@ -21,7 +22,11 @@ const totalElements = ref(0);
 const comments = ref([]);
 const loadingComments = ref(false);
 const commentsError = ref('');
+const watchHistory = ref([]);
+const loadingWatchHistory = ref(false);
+const watchHistoryError = ref('');
 const SUBMISSION_PAGE_SIZE = 6;
+const WATCH_HISTORY_PAGE_SIZE = 6;
 
 const statusLabels = {
   PENDING: '待审核',
@@ -44,8 +49,8 @@ const downloadFile = async (video, file) => {
       throw new Error('Missing download URL');
     }
     window.location.assign(response.data.url);
-  } catch {
-    downloadError.value = '下载失败，请稍后重试。';
+  } catch (err) {
+    downloadError.value = friendlyApiError(err, '下载失败，请稍后重试。');
   } finally {
     activeDownload.value = '';
   }
@@ -71,8 +76,8 @@ const loadVideos = async (page = currentPage.value) => {
         ? response.data.totalElements
         : videos.value.length;
     }
-  } catch {
-    videosError.value = '投稿加载失败，请稍后重试。';
+  } catch (err) {
+    videosError.value = friendlyApiError(err, '投稿加载失败，请稍后重试。');
   } finally {
     loadingVideos.value = false;
   }
@@ -91,19 +96,44 @@ const loadComments = async () => {
   try {
     const response = await api.get('/api/users/me/comments');
     comments.value = Array.isArray(response.data) ? response.data : (response.data?.content || []);
-  } catch {
-    commentsError.value = '评论加载失败，请稍后重试。';
+  } catch (err) {
+    commentsError.value = friendlyApiError(err, '评论加载失败，请稍后重试。');
   } finally {
     loadingComments.value = false;
   }
+};
+
+const loadWatchHistory = async () => {
+  loadingWatchHistory.value = true;
+  watchHistoryError.value = '';
+  try {
+    const response = await api.get('/api/users/me/watch-history', {
+      params: { page: 0, size: WATCH_HISTORY_PAGE_SIZE },
+    });
+    watchHistory.value = Array.isArray(response.data)
+      ? response.data
+      : (Array.isArray(response.data?.content) ? response.data.content : []);
+  } catch (err) {
+    watchHistoryError.value = friendlyApiError(err, 'Watch history failed to load.');
+  } finally {
+    loadingWatchHistory.value = false;
+  }
+};
+
+const formatProgress = (record) => {
+  const progress = Number(record?.progressPercent);
+  if (Number.isFinite(progress)) return `${Math.round(progress)}%`;
+  const duration = Number(record?.durationSeconds) || 0;
+  const position = Number(record?.lastPositionSeconds) || 0;
+  return duration > 0 ? `${Math.round((position / duration) * 100)}%` : '0%';
 };
 
 const anonymizeComment = async (commentId) => {
   try {
     await api.delete(`/api/users/me/comments/${commentId}`);
     comments.value = comments.value.filter((comment) => comment.commentId !== commentId);
-  } catch {
-    commentsError.value = '评论删除失败，请稍后重试。';
+  } catch (err) {
+    commentsError.value = friendlyApiError(err, '评论删除失败，请稍后重试。');
   }
 };
 
@@ -113,6 +143,7 @@ onMounted(() => {
     user.value = storedUser;
     loadVideos();
     loadComments();
+    loadWatchHistory();
   } else {
     router.push('/login');
   }
@@ -227,10 +258,30 @@ const handleLogout = async () => {
         </button>
       </nav>
     </section>
+    <section class="watch-history-section" aria-labelledby="watch-history-title">
+      <div class="submissions-heading"><div><p class="channel-kicker">Watch history</p><h2 id="watch-history-title">Continue watching</h2></div></div>
+      <p v-if="watchHistoryError" class="submission-download-error" role="alert">{{ watchHistoryError }}</p>
+      <LoadingState v-if="loadingWatchHistory" :count="2" />
+      <p v-else-if="!watchHistory.length" class="personal-comments-empty">No watch history yet.</p>
+      <div v-else class="watch-history-list">
+        <RouterLink
+          v-for="record in watchHistory"
+          :key="record.video?.id"
+          class="watch-history-item"
+          :to="`/videos/${record.video?.id}`"
+        >
+          <div>
+            <h3>{{ record.video?.title || 'Untitled video' }}</h3>
+            <span>{{ formatDate(record.lastWatchedAt || record.video?.uploadDate) }}</span>
+          </div>
+          <strong>{{ formatProgress(record) }}</strong>
+        </RouterLink>
+      </div>
+    </section>
     <section class="personal-comments-section" aria-labelledby="personal-comments-title">
       <div class="submissions-heading"><div><p class="channel-kicker">互动记录</p><h2 id="personal-comments-title">我的评论</h2></div></div>
       <p v-if="commentsError" class="submission-download-error" role="alert">{{ commentsError }}</p>
-      <LoadingState v-else-if="loadingComments" :count="2" />
+      <LoadingState v-if="loadingComments" :count="2" />
       <p v-else-if="!comments.length" class="personal-comments-empty">还没有发表过评论。</p>
       <div v-else class="personal-comments-list"><article v-for="comment in comments" :key="comment.commentId" class="personal-comment"><div><p>{{ comment.content }}</p><span>{{ formatDate(comment.createdAt) }}</span></div><button class="personal-comment-delete" type="button" @click="anonymizeComment(comment.commentId)">删除</button></article></div>
     </section>
@@ -246,6 +297,6 @@ const handleLogout = async () => {
 .channel-avatar { display: grid; width: 68px; height: 68px; place-items: center; border-radius: 50%; background: color-mix(in srgb, var(--brand) 22%, var(--surface-2)); color: var(--text); font-size: 1.75rem; font-weight: 800; }.channel-profile h2 { margin: 7px 0; color: var(--text); font-size: 1.5rem; }.channel-profile p:last-child { margin: 0; color: var(--muted); }
 .channel-actions { display: flex; flex-wrap: wrap; gap: 10px; justify-content: flex-end; }.channel-actions a, .channel-actions button { padding: 10px 14px; border-radius: 9px; font: inherit; font-weight: 700; text-decoration: none; cursor: pointer; }.channel-primary { background: var(--brand-action); color: var(--on-brand); }.channel-secondary { border: 1px solid var(--border); color: var(--text); }.channel-actions button { border: 0; background: transparent; color: var(--danger); }
 .submissions-section { margin-top: 42px; }.submissions-heading { align-items: center; display: flex; gap: 20px; justify-content: space-between; margin-bottom: 18px; }.submissions-heading h2 { color: var(--text); margin: 6px 0 0; }.submissions-heading a { border-radius: 9px; font-weight: 700; padding: 10px 14px; text-decoration: none; }.submission-grid { display: grid; gap: 16px; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); }.submission-card { background: var(--surface); border: 1px solid var(--border); border-radius: 16px; padding: 20px; }.submission-card__heading { align-items: start; display: flex; gap: 12px; justify-content: space-between; }.submission-card h3 { color: var(--text); margin: 0; }.submission-status { border-radius: 999px; font-size: .8rem; font-weight: 750; padding: 5px 9px; white-space: nowrap; }.submission-status--pending { background: color-mix(in srgb, var(--brand-warm) 22%, var(--surface)); color: var(--text); }.submission-status--approved { background: color-mix(in srgb, var(--success) 18%, var(--surface)); color: var(--success); }.submission-status--rejected { background: color-mix(in srgb, var(--danger) 16%, var(--surface)); color: var(--danger); }.submission-reason { color: var(--danger); line-height: 1.55; margin: 14px 0; }.submission-download-note { color: var(--muted); font-size: .9rem; margin: 12px 0 0; }.submission-downloads { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 14px; }.submission-download { border: 0; border-radius: 9px; background: var(--brand-action); color: var(--on-brand); cursor: pointer; font: inherit; font-weight: 750; padding: 8px 12px; text-decoration: none; }.submission-download:disabled { cursor: progress; opacity: .72; }.submission-download--secondary { background: transparent; border: 1px solid var(--border); color: var(--text); }.submission-download-error { color: var(--danger); font-weight: 700; margin: 0 0 16px; }.submission-expired { color: var(--muted); font-weight: 700; margin: 14px 0 0; }.submission-times { display: grid; gap: 7px; margin: 16px 0 0; }.submission-times div { display: flex; gap: 8px; }.submission-times dt { color: var(--muted); }.submission-times dd { color: var(--text); margin: 0; }.submission-pagination { align-items: center; display: flex; gap: 12px; justify-content: center; margin-top: 22px; }.submission-pagination button { border: 1px solid var(--border); border-radius: 9px; background: var(--surface); color: var(--text); cursor: pointer; font: inherit; font-weight: 750; padding: 8px 12px; }.submission-pagination button:disabled { cursor: not-allowed; opacity: .55; }.submission-pagination span { color: var(--muted); font-weight: 700; }
-.personal-comments-section { border-top: 1px solid var(--border); margin-top: 42px; padding-top: 28px; }.personal-comments-list { display: grid; gap: 10px; }.personal-comment { align-items: center; border-bottom: 1px solid var(--border); display: flex; gap: 18px; justify-content: space-between; padding: 13px 0; }.personal-comment p { margin: 0 0 5px; }.personal-comment span, .personal-comments-empty { color: var(--muted); font-size: .84rem; }.personal-comment-delete { background: transparent; border: 1px solid var(--border); border-radius: 8px; color: var(--danger); cursor: pointer; font: inherit; padding: 7px 10px; }
+.watch-history-section, .personal-comments-section { border-top: 1px solid var(--border); margin-top: 42px; padding-top: 28px; }.watch-history-list { display: grid; gap: 10px; }.watch-history-item { align-items: center; border: 1px solid var(--border); border-radius: 12px; color: var(--text); display: flex; gap: 18px; justify-content: space-between; padding: 14px 16px; text-decoration: none; }.watch-history-item h3 { margin: 0 0 5px; font-size: 1rem; }.watch-history-item span { color: var(--muted); font-size: .84rem; }.watch-history-item strong { color: var(--brand); font-size: .95rem; }.personal-comments-list { display: grid; gap: 10px; }.personal-comment { align-items: center; border-bottom: 1px solid var(--border); display: flex; gap: 18px; justify-content: space-between; padding: 13px 0; }.personal-comment p { margin: 0 0 5px; }.personal-comment span, .personal-comments-empty { color: var(--muted); font-size: .84rem; }.personal-comment-delete { background: transparent; border: 1px solid var(--border); border-radius: 8px; color: var(--danger); cursor: pointer; font: inherit; padding: 7px 10px; }
 @media (max-width: 760px) { .channel-hero { padding: 32px 26px; }.channel-card { grid-template-columns: auto 1fr; }.channel-actions { grid-column: 1 / -1; justify-content: flex-start; } }
 </style>

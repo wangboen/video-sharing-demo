@@ -37,6 +37,11 @@ public class LegacyVideoVersionMigration implements CommandLineRunner {
                     "alter table videos alter column version set default 0",
                     "alter table videos modify column version bigint not null default 0");
         }
+        if (product.contains("postgresql")) {
+            return List.of(
+                    "alter table videos alter column version set default 0",
+                    "alter table videos alter column version set not null");
+        }
         if (product.contains("h2")) {
             return List.of(
                     "alter table videos alter column version set default 0",

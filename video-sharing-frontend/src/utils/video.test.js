@@ -11,9 +11,9 @@ import {
 
 describe('video utilities', () => {
   it('uses safe API URLs and handles missing URLs', () => {
-    expect(getThumbnailUrl({ thumbnailUrl: '/media/cover.jpg' })).toBe('http://localhost:8080/media/cover.jpg')
+    expect(getThumbnailUrl({ thumbnailUrl: '/media/cover.jpg' })).toBe('http://192.168.50.167:8080/media/cover.jpg')
     expect(getThumbnailUrl({ thumbnailUrl: null })).toBe('')
-    expect(getVideoUrl({ videoUrl: '/media/clip.mp4' })).toBe('http://localhost:8080/media/clip.mp4')
+    expect(getVideoUrl({ videoUrl: '/media/clip.mp4' })).toBe('http://192.168.50.167:8080/media/clip.mp4')
     expect(getVideoUrl({ videoUrl: undefined })).toBe('')
   })
 

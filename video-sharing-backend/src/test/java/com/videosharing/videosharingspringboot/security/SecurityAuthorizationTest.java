@@ -80,6 +80,14 @@ class SecurityAuthorizationTest {
     }
 
     @Test
+    void anonymousUsersCanWatchVideosAndReadComments() throws Exception {
+        mvc.perform(get("/api/videos/10"))
+                .andExpect(status().isOk());
+        mvc.perform(get("/api/videos/10/comments"))
+                .andExpect(status().isOk());
+    }
+
+    @Test
     void onlyAdminCanManageReviewers() throws Exception {
         mvc.perform(get("/api/admin/reviewers").with(user("reviewer").roles("REVIEWER")))
                 .andExpect(status().isForbidden());
@@ -138,6 +146,16 @@ class SecurityAuthorizationTest {
 
         @GetMapping("/api/users/me/comments")
         ResponseEntity<Void> comments() {
+            return ResponseEntity.ok().build();
+        }
+
+        @GetMapping("/api/videos/{id}")
+        ResponseEntity<Void> video(@PathVariable Long id) {
+            return ResponseEntity.ok().build();
+        }
+
+        @GetMapping("/api/videos/{id}/comments")
+        ResponseEntity<Void> videoComments(@PathVariable Long id) {
             return ResponseEntity.ok().build();
         }
 

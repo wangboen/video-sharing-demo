@@ -42,12 +42,10 @@ public class VideoService {
     private final Clock clock;
     private final String pendingPrefix;
     private final String publicPrefix;
-    private final VideoSearchService videoSearch;
 
     @Autowired
     public VideoService(VideoRepository videoRepository,
                         ObjectStorageService objectStorage,
-                        VideoSearchService videoSearch,
                         @Value("${object-storage.validation-dir:${java.io.tmpdir}/video-sharing-validation}") String objectValidationDir,
                         @Value("${object-storage.presign-expiration-minutes:15}") long presignExpirationMinutes,
                         @Value("${video-download.presign-expiration-minutes:15}") long downloadPresignExpirationMinutes,
@@ -56,7 +54,7 @@ public class VideoService {
                         @Value("${object-storage.public-prefix:public/}") String publicPrefix) {
         this(videoRepository, objectStorage, objectValidationDir, Duration.ofMinutes(presignExpirationMinutes),
                 Duration.ofMinutes(downloadPresignExpirationMinutes), Duration.ofDays(rejectedRetentionDays),
-                Clock.systemUTC(), pendingPrefix, publicPrefix, videoSearch);
+                Clock.systemUTC(), pendingPrefix, publicPrefix);
     }
 
     VideoService(VideoRepository videoRepository,
@@ -64,16 +62,7 @@ public class VideoService {
                  String objectValidationDir,
                  Duration presignExpiration) {
         this(videoRepository, objectStorage, objectValidationDir, presignExpiration, presignExpiration,
-                Duration.ofDays(7), Clock.systemUTC(), "pending/", "public/", null);
-    }
-
-    VideoService(VideoRepository videoRepository,
-                 ObjectStorageService objectStorage,
-                 String objectValidationDir,
-                 Duration presignExpiration,
-                 VideoSearchService videoSearch) {
-        this(videoRepository, objectStorage, objectValidationDir, presignExpiration, presignExpiration,
-                Duration.ofDays(7), Clock.systemUTC(), "pending/", "public/", videoSearch);
+                Duration.ofDays(7), Clock.systemUTC(), "pending/", "public/");
     }
 
     VideoService(VideoRepository videoRepository,
@@ -83,7 +72,7 @@ public class VideoService {
                  Duration rejectedDownloadRetention,
                  Clock clock) {
         this(videoRepository, objectStorage, objectValidationDir, presignExpiration, presignExpiration,
-                rejectedDownloadRetention, clock, "pending/", "public/", null);
+                rejectedDownloadRetention, clock, "pending/", "public/");
     }
 
     VideoService(VideoRepository videoRepository,
@@ -94,7 +83,7 @@ public class VideoService {
                  Duration rejectedDownloadRetention,
                  Clock clock) {
         this(videoRepository, objectStorage, objectValidationDir, presignExpiration, downloadPresignExpiration,
-                rejectedDownloadRetention, clock, "pending/", "public/", null);
+                rejectedDownloadRetention, clock, "pending/", "public/");
     }
 
     VideoService(VideoRepository videoRepository,
@@ -106,20 +95,6 @@ public class VideoService {
                  Clock clock,
                  String pendingPrefix,
                  String publicPrefix) {
-        this(videoRepository, objectStorage, objectValidationDir, presignExpiration, downloadPresignExpiration,
-                rejectedDownloadRetention, clock, pendingPrefix, publicPrefix, null);
-    }
-
-    VideoService(VideoRepository videoRepository,
-                 ObjectStorageService objectStorage,
-                 String objectValidationDir,
-                 Duration presignExpiration,
-                 Duration downloadPresignExpiration,
-                 Duration rejectedDownloadRetention,
-                 Clock clock,
-                 String pendingPrefix,
-                 String publicPrefix,
-                 VideoSearchService videoSearch) {
         this.videoRepository = videoRepository;
         this.objectStorage = objectStorage;
         this.objectValidationPath = Paths.get(objectValidationDir).toAbsolutePath().normalize();
@@ -129,7 +104,6 @@ public class VideoService {
         this.clock = clock;
         this.pendingPrefix = normalizePrefix(pendingPrefix);
         this.publicPrefix = normalizePrefix(publicPrefix);
-        this.videoSearch = videoSearch;
     }
 
     public List<Video> getAllVideos() {
@@ -145,10 +119,7 @@ public class VideoService {
         if (trimmed.isEmpty()) {
             return getRecommendedVideos(pageable);
         }
-        if (videoSearch == null) {
-            throw new VideoSearchUnavailableException("Video search is not configured");
-        }
-        return videoSearch.searchApproved(trimmed, pageable);
+        return videoRepository.searchPublicVideos(VideoStatus.APPROVED, trimmed, pageable);
     }
 
     public Page<UserSubmissionResponse> getSubmissions(User user, Pageable pageable) {

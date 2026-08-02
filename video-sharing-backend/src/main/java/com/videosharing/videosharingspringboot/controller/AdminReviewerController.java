@@ -31,12 +31,8 @@ public class AdminReviewerController {
 
     @PostMapping
     public ResponseEntity<?> create(@Valid @RequestBody RegisterRequest request) {
-        try {
-            return ResponseEntity.status(HttpStatus.CREATED).body(ReviewerResponse.from(
-                    staffAccounts.createReviewer(request.getUsername(), request.getEmail(), request.getPassword())));
-        } catch (RuntimeException exception) {
-            return ResponseEntity.badRequest().body(exception.getMessage());
-        }
+        return ResponseEntity.status(HttpStatus.CREATED).body(ReviewerResponse.from(
+                staffAccounts.createReviewer(request.getUsername(), request.getEmail(), request.getPassword())));
     }
 
     @GetMapping

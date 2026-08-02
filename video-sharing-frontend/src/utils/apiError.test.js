@@ -17,4 +17,10 @@ describe('friendlyApiError', () => {
   it('uses the supplied Chinese fallback for unknown errors', () => {
     expect(friendlyApiError({ response: { data: { unexpected: 'Internal error' } } }, '视频发布失败，请稍后重试。')).toBe('视频发布失败，请稍后重试。')
   })
+  it('maps backend service and comment errors to stable Chinese copy', () => {
+    expect(friendlyApiError({ response: { data: { message: 'Comment service is temporarily unavailable' } } }, '评论发送失败')).toBe('评论服务暂时不可用，请稍后重试。')
+    expect(friendlyApiError({ response: { data: { message: 'Video search is temporarily unavailable' } } }, '视频加载失败')).toBe('视频搜索暂时不可用，请稍后重试。')
+    expect(friendlyApiError({ response: { data: { message: 'Requested content was not found' } } }, '下载失败')).toBe('请求的内容不存在。')
+    expect(friendlyApiError({ response: { data: { message: 'Service is temporarily unavailable' } } }, '加载失败')).toBe('服务暂时不可用，请稍后重试。')
+  })
 })

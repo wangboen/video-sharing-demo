@@ -2,6 +2,7 @@ package com.videosharing.videosharingspringboot.controller;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.videosharing.videosharingspringboot.config.ApiExceptionHandler;
 import com.videosharing.videosharingspringboot.dto.CompleteUploadRequest;
 import com.videosharing.videosharingspringboot.dto.CreateUploadSessionRequest;
 import com.videosharing.videosharingspringboot.dto.UploadFileRequest;
@@ -13,7 +14,7 @@ import com.videosharing.videosharingspringboot.model.Video;
 import com.videosharing.videosharingspringboot.model.VideoStatus;
 import com.videosharing.videosharingspringboot.service.UserService;
 import com.videosharing.videosharingspringboot.service.VideoService;
-import com.videosharing.videosharingspringboot.service.VideoSearchUnavailableException;
+import org.springframework.dao.DataAccessResourceFailureException;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.data.domain.Page;
@@ -107,15 +108,17 @@ class VideoControllerSafeResponseTest {
     }
 
     @Test
-    void searchVideosReturnsServiceUnavailableWhenSearchBackendIsDown() {
+    void searchVideosReturnsServiceUnavailableWhenDatabaseSearchIsDown() {
         var pageable = PageRequest.of(0, 5);
         when(videos.searchPublicVideos("spring", pageable))
-                .thenThrow(new VideoSearchUnavailableException("Elasticsearch unavailable"));
+                .thenThrow(new DataAccessResourceFailureException("database unavailable"));
 
-        var response = controller.searchVideos(" spring ", 0, 5);
+        var exception = assertThrows(DataAccessResourceFailureException.class,
+                () -> controller.searchVideos(" spring ", 0, 5));
+        var response = new ApiExceptionHandler().handleServiceUnavailable(exception);
 
         assertEquals(503, response.getStatusCode().value());
-        assertEquals("Video search is temporarily unavailable", response.getBody());
+        assertEquals("Service is temporarily unavailable", response.getBody().get("message"));
     }
 
     private Video video(VideoStatus status) {

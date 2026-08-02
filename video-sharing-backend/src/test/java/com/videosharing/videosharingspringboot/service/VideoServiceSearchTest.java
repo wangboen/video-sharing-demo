@@ -16,20 +16,18 @@ import static org.mockito.Mockito.*;
 
 class VideoServiceSearchTest {
     private final VideoRepository repository = mock(VideoRepository.class);
-    private final VideoSearchService search = mock(VideoSearchService.class);
     private final VideoService service = new VideoService(repository, null, "build/validation",
-            Duration.ofMinutes(15), search);
+            Duration.ofMinutes(15));
 
     @Test
-    void nonBlankPublicSearchUsesElasticsearch() {
+    void nonBlankPublicSearchUsesRepositorySearch() {
         var pageable = PageRequest.of(0, 12);
         var result = new PageImpl<>(List.of(video()), pageable, 1);
-        when(search.searchApproved("spring", pageable)).thenReturn(result);
+        when(repository.searchPublicVideos(VideoStatus.APPROVED, "spring", pageable)).thenReturn(result);
 
         assertEquals(result, service.searchPublicVideos(" spring ", pageable));
 
-        verify(search).searchApproved("spring", pageable);
-        verify(repository, never()).searchPublicVideos(any(), any(), any());
+        verify(repository).searchPublicVideos(VideoStatus.APPROVED, "spring", pageable);
     }
 
     @Test
@@ -40,18 +38,6 @@ class VideoServiceSearchTest {
                 .thenReturn(result);
 
         assertEquals(result, service.searchPublicVideos("   ", pageable));
-
-        verifyNoInteractions(search);
-    }
-
-    @Test
-    void searchUnavailableBubblesUpForControllerMapping() {
-        var pageable = PageRequest.of(0, 12);
-        when(search.searchApproved("spring", pageable))
-                .thenThrow(new VideoSearchUnavailableException("down"));
-
-        assertThrows(VideoSearchUnavailableException.class,
-                () -> service.searchPublicVideos("spring", pageable));
     }
 
     private static Video video() {

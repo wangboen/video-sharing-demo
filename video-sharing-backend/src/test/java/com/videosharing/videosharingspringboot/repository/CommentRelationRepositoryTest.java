@@ -72,6 +72,23 @@ class CommentRelationRepositoryTest {
     }
 
     @Test
+    void returnsInitialVisibleCommentPageWithoutCursorBoundary() {
+        User user = saveUser();
+        Video video = saveVideo(user);
+        save(111L, video, user, CommentStatus.VISIBLE, 1L, false, Instant.parse("2026-07-31T12:00:00Z"));
+        save(112L, video, user, CommentStatus.VISIBLE, 1L, false, Instant.parse("2026-07-31T11:00:00Z"));
+        save(113L, video, user, CommentStatus.HIDDEN, 1L, false, Instant.parse("2026-07-31T13:00:00Z"));
+
+        List<Long> ids = comments.findVisibleByVideo(
+                        video.getId(), PageRequest.of(0, 10))
+                .stream()
+                .map(CommentRelation::getCommentId)
+                .toList();
+
+        assertThat(ids).containsExactly(111L, 112L);
+    }
+
+    @Test
     void sequentialDuplicateLikeInsertsOnceAndIncrementsOnce() {
         Instant createdAt = Instant.parse("2026-07-31T12:00:00Z");
         User user = saveUser("comment-like-user");

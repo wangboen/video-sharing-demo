@@ -1,11 +1,12 @@
 <script setup>
-import { computed, ref, watch } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import ErrorState from '../components/ErrorState.vue'
 import LoadingState from '../components/LoadingState.vue'
 import VideoListItem from '../components/VideoListItem.vue'
 import api from '../services/api'
 import { getStoredUser } from '../services/auth'
+import { friendlyApiError } from '../utils/apiError'
 import { formatDate, formatViews, getAuthorName, getThumbnailUrl, getVideoUrl } from '../utils/video'
 
 const route = useRoute()
@@ -25,8 +26,11 @@ const commentDraft = ref('')
 const commentSubmitting = ref(false)
 const commentError = ref('')
 const currentUser = ref(getStoredUser())
+const player = ref(null)
+const watchHistory = ref(null)
 let latestRequestVersion = 0
 let latestCommentRequestVersion = 0
+let lastProgressReportedAt = 0
 
 const authorName = computed(() => getAuthorName(video.value) || '匿名创作者')
 const authorInitial = computed(() => authorName.value.trim().charAt(0).toUpperCase() || '视')
@@ -58,8 +62,8 @@ async function loadComments(reset = false) {
     if (reset) featuredComments.value = Array.isArray(data.featured) ? data.featured : []
     comments.value = reset ? (Array.isArray(data.comments) ? data.comments : []) : [...comments.value, ...(Array.isArray(data.comments) ? data.comments : [])]
     commentsCursor.value = data.nextCursor || ''
-  } catch {
-    if (isLatestRequest()) commentError.value = '评论加载失败，请稍后重试。'
+  } catch (err) {
+    if (isLatestRequest()) commentError.value = friendlyApiError(err, '评论加载失败，请稍后重试。')
   } finally {
     if (isLatestRequest()) commentsLoading.value = false
   }
@@ -74,8 +78,8 @@ async function submitComment() {
     const response = await api.post(`/api/videos/${route.params.id}/comments`, { content })
     comments.value.unshift({ commentId: response.data.commentId, username: currentUser.value?.username || '我', content, status: 'sending', likeCount: 0, likedByMe: false })
     commentDraft.value = ''
-  } catch {
-    commentError.value = '评论发送失败，请稍后重试。'
+  } catch (err) {
+    commentError.value = friendlyApiError(err, '评论发送失败，请稍后重试。')
   } finally {
     commentSubmitting.value = false
   }
@@ -110,8 +114,8 @@ async function loadRecommendations(requestVersion, videoId) {
     recommendations.value = list
       .filter((item) => String(item.id) !== String(videoId))
       .slice(0, 12)
-  } catch {
-    if (isLatestRequest()) recommendationsError.value = '推荐视频加载失败，请稍后重试。'
+  } catch (err) {
+    if (isLatestRequest()) recommendationsError.value = friendlyApiError(err, '推荐视频加载失败，请稍后重试。')
   } finally {
     if (isLatestRequest()) recommendationsLoading.value = false
   }
@@ -119,6 +123,55 @@ async function loadRecommendations(requestVersion, videoId) {
 
 function retryRecommendations() {
   return loadRecommendations(latestRequestVersion, route.params.id)
+}
+
+async function loadWatchHistory(videoId, isLatestRequest) {
+  if (!currentUser.value) return
+  try {
+    const response = await api.get(`/api/users/me/watch-history/${videoId}`)
+    if (!isLatestRequest() || String(route.params.id) !== String(videoId)) return
+    watchHistory.value = response.data || null
+    const lastPosition = Number(watchHistory.value?.lastPositionSeconds) || 0
+    if (!watchHistory.value?.completed && lastPosition > 0) {
+      await nextTick()
+      if (player.value) player.value.currentTime = lastPosition
+    }
+  } catch {
+    if (isLatestRequest()) watchHistory.value = null
+  }
+}
+
+function progressPayload(eventType) {
+  const duration = Number.isFinite(player.value?.duration) ? Math.floor(player.value.duration) : 0
+  const position = Number.isFinite(player.value?.currentTime) ? Math.floor(player.value.currentTime) : 0
+  return {
+    positionSeconds: Math.max(0, position),
+    durationSeconds: Math.max(0, duration),
+    completed: eventType === 'ended' || (duration > 0 && position / duration >= 0.95),
+    eventType,
+  }
+}
+
+function hasMeaningfulProgress(payload) {
+  return payload.positionSeconds >= 10
+    || (payload.durationSeconds > 0 && payload.positionSeconds / payload.durationSeconds >= 0.05)
+}
+
+function reportWatchProgress(eventType, { force = false } = {}) {
+  if (!currentUser.value || !video.value || !player.value) return
+  const payload = progressPayload(eventType)
+  if (payload.positionSeconds <= 0) return
+  if (!force && !hasMeaningfulProgress(payload)) return
+  const now = Date.now()
+  if (!force && now - lastProgressReportedAt < 30000) return
+  lastProgressReportedAt = now
+  api.post(`/api/videos/${video.value.id}/watch-progress`, payload).catch(() => {})
+}
+
+function handleVisibilityChange() {
+  if (document.visibilityState === 'hidden') {
+    reportWatchProgress('hidden', { force: true })
+  }
 }
 
 async function loadPage() {
@@ -134,6 +187,8 @@ async function loadPage() {
     recommendationsError.value = ''
     liked.value = false
     saved.value = false
+    watchHistory.value = null
+    lastProgressReportedAt = 0
     featuredComments.value = []
     comments.value = []
     commentsCursor.value = ''
@@ -155,8 +210,9 @@ async function loadPage() {
       .filter((item) => String(item.id) !== String(videoId))
       .slice(0, 12)
     loadComments(true)
-  } catch {
-    if (isLatestRequest()) error.value = 'Unable to load video.'
+    loadWatchHistory(videoId, isLatestRequest)
+  } catch (err) {
+    if (isLatestRequest()) error.value = friendlyApiError(err, '视频加载失败，请稍后重试。')
   } finally {
     if (isLatestRequest()) {
       loading.value = false
@@ -169,8 +225,8 @@ async function loadPage() {
     .then((response) => {
       if (isLatestRequest()) video.value = response.data
     })
-    .catch(() => {
-      if (isLatestRequest()) error.value = '视频加载失败，请稍后重试。'
+    .catch((err) => {
+      if (isLatestRequest()) error.value = friendlyApiError(err, '视频加载失败，请稍后重试。')
     })
     .finally(() => {
       if (isLatestRequest()) loading.value = false
@@ -182,6 +238,15 @@ async function loadPage() {
 }
 
 watch(() => route.params.id, loadPage, { immediate: true })
+
+onMounted(() => {
+  document.addEventListener('visibilitychange', handleVisibilityChange)
+})
+
+onBeforeUnmount(() => {
+  reportWatchProgress('unload', { force: true })
+  document.removeEventListener('visibilitychange', handleVisibilityChange)
+})
 </script>
 
 <template>
@@ -192,10 +257,14 @@ watch(() => route.params.id, loadPage, { immediate: true })
     <div v-else-if="video" class="watch-layout">
       <section class="watch-layout__main">
         <video
+          ref="player"
           class="watch-player"
           controls
           :src="getVideoUrl(video)"
           :poster="getThumbnailUrl(video)"
+          @timeupdate="reportWatchProgress('heartbeat')"
+          @pause="reportWatchProgress('pause', { force: true })"
+          @ended="reportWatchProgress('ended', { force: true })"
         />
 
         <section class="video-details">

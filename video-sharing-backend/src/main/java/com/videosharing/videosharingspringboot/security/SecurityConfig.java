@@ -43,7 +43,8 @@ public class SecurityConfig {
                         .requestMatchers(HttpMethod.OPTIONS, "/**").permitAll()
                         .requestMatchers("/api/auth/register", "/api/auth/login", "/api/staff/auth/login").permitAll()
                         .requestMatchers(HttpMethod.GET, "/api/videos", "/api/videos/recommended",
-                                "/api/videos/search", "/api/videos/*/comments", "/api/comments/commands/*").permitAll()
+                                "/api/videos/search", "/api/videos/*", "/api/videos/*/comments",
+                                "/api/comments/commands/*").permitAll()
                         .requestMatchers("/api/admin/**").hasRole("ADMIN")
                         .requestMatchers("/api/moderation/**").hasAnyRole("REVIEWER", "ADMIN")
                         .requestMatchers("/api/videos/upload-session", "/api/videos/upload-complete",
@@ -51,6 +52,8 @@ public class SecurityConfig {
                                 "/api/users/me/videos/*/download/video",
                                 "/api/users/me/videos/*/download/thumbnail",
                                 "/api/users/me/comments", "/api/users/me/comments/*",
+                                "/api/users/me/watch-history", "/api/users/me/watch-history/*",
+                                "/api/videos/*/watch-progress", "/api/videos/*/watch-progress/beacon",
                                 "/api/videos/*/comments", "/api/comments/*/like").hasRole("USER")
                         .anyRequest().authenticated())
                 .addFilterBefore(jwtAuthenticationFilter, UsernamePasswordAuthenticationFilter.class)
@@ -84,9 +87,9 @@ public class SecurityConfig {
                 .map(String::trim)
                 .filter(origin -> !origin.isEmpty())
                 .toList();
-//        if (origins.stream().anyMatch(origin -> origin.contains("*"))) {
-//            throw new IllegalArgumentException("cors.allowed-origins must not contain wildcard origins");
-//        }
+        if (origins.stream().anyMatch(origin -> origin.contains("*"))) {
+            throw new IllegalArgumentException("cors.allowed-origins must not contain wildcard origins");
+        }
         return origins;
     }
 }

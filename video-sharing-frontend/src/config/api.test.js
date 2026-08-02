@@ -4,11 +4,11 @@ import { API_BASE_URL, resolveApiBaseUrl } from './api'
 
 describe('API configuration', () => {
   it('provides the local backend default when no environment override is set', () => {
-    expect(API_BASE_URL).toBe('http://localhost:8080')
+    expect(API_BASE_URL).toBe('http://192.168.50.167:8080')
   })
 
   it('uses the local backend in development and same-origin in production when not configured', () => {
-    expect(resolveApiBaseUrl(undefined, true)).toBe('http://localhost:8080')
+    expect(resolveApiBaseUrl(undefined, true)).toBe('http://192.168.50.167:8080')
     expect(resolveApiBaseUrl(undefined, false)).toBe('')
   })
 

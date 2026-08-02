@@ -87,8 +87,7 @@ public class CommentQueryService {
         int batchSize = pageSize + 1;
 
         while (normal.size() < pageSize) {
-            List<CommentRelation> batch = relations.findVisibleByVideoAfterCursor(videoId, nextQueryCursor.createdAt(),
-                    nextQueryCursor.commentId(), PageRequest.of(0, batchSize));
+            List<CommentRelation> batch = findNormalBatch(videoId, nextQueryCursor, batchSize);
             if (batch.isEmpty()) return new NormalPage(normal, null);
 
             for (int index = 0; index < batch.size(); index++) {
@@ -107,6 +106,14 @@ public class CommentQueryService {
             if (batch.size() < batchSize) return new NormalPage(normal, null);
         }
         return new NormalPage(normal, null);
+    }
+
+    private List<CommentRelation> findNormalBatch(Long videoId, Cursor cursor, int batchSize) {
+        if (cursor.createdAt() == null) {
+            return relations.findVisibleByVideo(videoId, PageRequest.of(0, batchSize));
+        }
+        return relations.findVisibleByVideoAfterCursor(videoId, cursor.createdAt(),
+                cursor.commentId(), PageRequest.of(0, batchSize));
     }
 
     private boolean hasAdditionalNormalComment(Long videoId, Cursor cursor, List<CommentRelation> batch,
@@ -186,7 +193,7 @@ public class CommentQueryService {
         }
 
         private static Cursor parse(String value) {
-            if (value == null || value.isBlank()) return new Cursor(Instant.MAX, Long.MAX_VALUE);
+            if (value == null || value.isBlank()) return new Cursor(null, null);
             int separator = value.lastIndexOf('|');
             if (separator < 1 || separator == value.length() - 1) throw new IllegalArgumentException("Invalid comment cursor");
             try {

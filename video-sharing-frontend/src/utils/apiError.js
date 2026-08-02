@@ -10,6 +10,14 @@ const KNOWN_MESSAGES = new Map([
   ['password must contain 8 to 72 characters', '密码长度需为 8 到 72 个字符。'],
   ['email must not exceed 100 characters', '邮箱不能超过 100 个字符。'],
   ['thumbnail must be an image file.', '封面必须是图片文件。'],
+  ['comment service is temporarily unavailable', '评论服务暂时不可用，请稍后重试。'],
+  ['video search is temporarily unavailable', '视频搜索暂时不可用，请稍后重试。'],
+  ['requested content was not found', '请求的内容不存在。'],
+  ['service is temporarily unavailable', '服务暂时不可用，请稍后重试。'],
+  ['service failed unexpectedly', '服务暂时不可用，请稍后重试。'],
+  ['comment not found', '评论不存在或已不可操作。'],
+  ['comment command not found', '评论处理记录不存在。'],
+  ['access denied', '没有权限执行此操作。'],
 ])
 
 const STATUS_MESSAGES = new Map([

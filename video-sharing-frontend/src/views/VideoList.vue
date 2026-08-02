@@ -7,6 +7,7 @@ import ErrorState from '../components/ErrorState.vue'
 import LoadingState from '../components/LoadingState.vue'
 import VideoCard from '../components/VideoCard.vue'
 import api from '../services/api'
+import { friendlyApiError } from '../utils/apiError'
 import { matchesCategory } from '../utils/video'
 
 const PAGE_SIZE = 12
@@ -46,8 +47,8 @@ async function loadVideos(page = 0) {
         })
       : await api.get('/api/videos')
     applyPage(response.data, page)
-  } catch {
-    error.value = '视频加载失败，请检查服务是否正常运行。'
+  } catch (err) {
+    error.value = friendlyApiError(err, '视频加载失败，请检查服务是否正常运行。')
   } finally {
     loading.value = false
   }

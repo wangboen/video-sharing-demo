@@ -1,5 +1,6 @@
 package com.videosharing.videosharingspringboot.controller;
 
+import com.videosharing.videosharingspringboot.config.ApiExceptionHandler;
 import com.videosharing.videosharingspringboot.dto.AuthResponse;
 import com.videosharing.videosharingspringboot.dto.LoginRequest;
 import com.videosharing.videosharingspringboot.model.StaffAccount;
@@ -7,7 +8,6 @@ import com.videosharing.videosharingspringboot.security.JwtService;
 import com.videosharing.videosharingspringboot.security.RedisSessionService;
 import com.videosharing.videosharingspringboot.service.StaffAccountService;
 import jakarta.validation.Valid;
-import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
@@ -36,7 +36,7 @@ public class StaffAuthController {
             return ResponseEntity.ok(new AuthResponse("Staff logged in successfully!", token,
                     staff.getUsername(), staff.getId(), staff.getEmail(), staff.getRole()));
         } catch (RuntimeException exception) {
-            return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body("Invalid username or password");
+            throw new ApiExceptionHandler.AuthenticationRequiredException("Invalid username or password");
         }
     }
 }

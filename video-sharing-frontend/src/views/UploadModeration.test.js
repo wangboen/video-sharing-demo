@@ -1,14 +1,47 @@
 import { flushPromises, mount } from '@vue/test-utils'
-import { describe, expect, it, vi } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 
-const mocks = vi.hoisted(() => ({ post: vi.fn() }))
+const mocks = vi.hoisted(() => ({
+  post: vi.fn(),
+  rawPut: vi.fn(),
+  generateThumbnailFromVideo: vi.fn(),
+}))
+
 vi.mock('../services/api', () => ({ default: { post: mocks.post } }))
+vi.mock('axios', () => ({ default: { put: mocks.rawPut } }))
+vi.mock('../utils/videoThumbnail', () => ({
+  generateThumbnailFromVideo: mocks.generateThumbnailFromVideo,
+}))
 
 import VideoUpload from './VideoUpload.vue'
 
 describe('upload moderation messaging', () => {
+  beforeEach(() => {
+    mocks.post.mockReset()
+    mocks.rawPut.mockReset()
+    mocks.generateThumbnailFromVideo.mockReset()
+    mocks.generateThumbnailFromVideo.mockResolvedValue(new File(['cover'], 'auto-cover.jpg', { type: 'image/jpeg' }))
+    mocks.rawPut.mockResolvedValue({})
+  })
+
   it('says upload is pending review and points to the user dashboard', async () => {
-    mocks.post.mockResolvedValue({ data: { id: 1, status: 'PENDING' } })
+    mocks.post
+      .mockResolvedValueOnce({
+        data: {
+          uploadSessionId: 'session-id',
+          video: {
+            key: 'pending/users/7/session-id/video/demo.mp4',
+            uploadUrl: 'http://minio.local/upload-video',
+            contentType: 'video/mp4',
+          },
+          thumbnail: {
+            key: 'pending/users/7/session-id/thumbnail/auto-cover.jpg',
+            uploadUrl: 'http://minio.local/upload-thumb',
+            contentType: 'image/jpeg',
+          },
+        },
+      })
+      .mockResolvedValueOnce({ data: { id: 1, status: 'PENDING' } })
     const wrapper = mount(VideoUpload, {
       global: { stubs: { RouterLink: { props: ['to'], template: '<a :href="to"><slot /></a>' } } },
     })
@@ -21,8 +54,8 @@ describe('upload moderation messaging', () => {
     await wrapper.get('form').trigger('submit')
     await flushPromises()
 
-    expect(wrapper.text()).toContain('视频已提交审核')
-    expect(wrapper.get('a[href="/dashboard"]').text()).toContain('查看我的投稿')
-    expect(wrapper.text()).toContain('提交审核后可在我的投稿中查看')
+    expect(wrapper.get('[role="status"]').exists()).toBe(true)
+    expect(wrapper.get('a[href="/dashboard"]').exists()).toBe(true)
+    expect(mocks.post).toHaveBeenCalledWith('/api/videos/upload-complete', expect.any(Object))
   })
 })
