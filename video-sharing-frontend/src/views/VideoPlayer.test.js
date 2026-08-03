@@ -199,6 +199,28 @@ describe('VideoPlayer', () => {
     expect(wrapper.get('.comment-item--sending').text()).toContain('pending comment')
     expect(wrapper.get('.comment-item--sending').text()).toContain('发送中')
   })
+  it('preserves string comment ids when sending like requests', async () => {
+    const largeCommentId = '9007199254740993'
+    mocks.get.mockImplementation((url) => {
+      if (url === '/api/videos') return Promise.resolve({ data: [video('A')] })
+      return Promise.resolve({
+        data: {
+          featured: [],
+          comments: [{ commentId: largeCommentId, username: 'safe-user', content: 'precise id', likeCount: 0, likedByMe: false }],
+          nextCursor: null,
+        },
+      })
+    })
+    mocks.post.mockResolvedValue({})
+
+    const wrapper = mount(VideoPlayer, { global })
+    await flushPromises()
+    await wrapper.get('.comment-item button').trigger('click')
+    await flushPromises()
+
+    expect(mocks.post).toHaveBeenCalledWith(`/api/comments/${largeCommentId}/like`)
+  })
+
   it('shows a friendly comment loading error from the backend message', async () => {
     const error = new Error('service unavailable')
     error.response = { status: 503, data: { message: 'Service is temporarily unavailable' } }

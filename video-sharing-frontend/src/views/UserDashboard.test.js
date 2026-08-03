@@ -166,9 +166,10 @@ describe('个人中心退出登录', () => {
   })
 
   it('removes a personal comment after anonymizing it', async () => {
+    const largeCommentId = '9007199254740993'
     mocks.get
       .mockResolvedValueOnce({ data: [] })
-      .mockResolvedValueOnce({ data: [{ commentId: 7, content: 'my comment', createdAt: '2026-08-01T08:00:00Z' }] })
+      .mockResolvedValueOnce({ data: [{ commentId: largeCommentId, content: 'my comment', createdAt: '2026-08-01T08:00:00Z' }] })
     mocks.delete.mockResolvedValue({})
 
     const wrapper = mount(UserDashboard, {
@@ -184,7 +185,7 @@ describe('个人中心退出登录', () => {
     await wrapper.get('.personal-comment-delete').trigger('click')
     await flushPromises()
 
-    expect(mocks.delete).toHaveBeenCalledWith('/api/users/me/comments/7')
+    expect(mocks.delete).toHaveBeenCalledWith(`/api/users/me/comments/${largeCommentId}`)
     expect(wrapper.text()).not.toContain('my comment')
   })
 

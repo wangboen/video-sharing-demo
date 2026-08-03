@@ -87,9 +87,9 @@ public class SecurityConfig {
                 .map(String::trim)
                 .filter(origin -> !origin.isEmpty())
                 .toList();
-//        if (origins.stream().anyMatch(origin -> origin.contains("*"))) {
-//            throw new IllegalArgumentException("cors.allowed-origins must not contain wildcard origins");
-//        }
+        if (origins.stream().anyMatch(origin -> origin.contains("*"))) {
+            throw new IllegalArgumentException("cors.allowed-origins must not contain wildcard origins");
+        }
         return origins;
     }
 }

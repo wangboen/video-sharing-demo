@@ -1,0 +1,23 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: rocketmq-broker-config
+  namespace: default
+data:
+  broker.conf: |
+    brokerClusterName=DefaultCluster
+    brokerName=broker-a
+    brokerId=0
+
+    namesrvAddr=rocketmq-namesrv-service.default.svc.cluster.local:9876
+    listenPort=10911
+
+    # Local port-forward debugging only:
+    # this makes NameServer return 127.0.0.1:10911 to external Java producers.
+    brokerIP1=127.0.0.1
+
+    autoCreateTopicEnable=true
+    autoCreateSubscriptionGroup=true
+    deleteWhen=04
+    fileReservedTime=48
+    flushDiskType=ASYNC_FLUSH

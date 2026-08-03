@@ -1,4 +1,9 @@
 package com.videosharing.videosharingspringboot.dto;
 
-public record CommentCommandStatusResponse(String requestId, Long commentId, String status, String failureReason) {
+import com.fasterxml.jackson.databind.annotation.JsonSerialize;
+import com.fasterxml.jackson.databind.ser.std.ToStringSerializer;
+
+public record CommentCommandStatusResponse(String requestId,
+                                           @JsonSerialize(using = ToStringSerializer.class) Long commentId,
+                                           String status, String failureReason) {
 }
