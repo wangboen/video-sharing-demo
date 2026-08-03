@@ -83,6 +83,22 @@ describe('VideoPlayer', () => {
     expect(wrapper.get('.author-panel__name').text()).toBe('current video safe author')
   })
 
+  it('shows category and tags from the public video DTO', async () => {
+    mocks.get.mockResolvedValue({
+      data: [{
+        ...video('A', 'current video'),
+        category: { id: 1, code: 'movie', name: '电影' },
+        tags: [{ id: 10, code: 'movie_action', name: '动作' }],
+      }],
+    })
+
+    const wrapper = mount(VideoPlayer, { global })
+    await flushPromises()
+
+    expect(wrapper.get('.video-taxonomy__category').text()).toBe('电影')
+    expect(wrapper.get('.video-taxonomy__tag').text()).toBe('动作')
+  })
+
   it('shows the page error state when the requested video is absent from the list', async () => {
     mocks.get.mockResolvedValue({ data: [video('B')] })
 

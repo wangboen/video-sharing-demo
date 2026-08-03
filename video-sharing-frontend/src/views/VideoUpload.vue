@@ -1,6 +1,6 @@
 <script setup>
 import axios from 'axios';
-import { onBeforeUnmount, ref } from 'vue';
+import { onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import api from '../services/api';
 import { friendlyApiError } from '../utils/apiError';
 import { generateThumbnailFromVideo } from '../utils/videoThumbnail';
@@ -15,6 +15,12 @@ const successMessage = ref('');
 const uploading = ref(false);
 const videoInput = ref(null);
 const thumbnailInput = ref(null);
+const categories = ref([]);
+const tags = ref([]);
+const selectedCategoryId = ref('');
+const selectedTagIds = ref([]);
+const categoryLoading = ref(false);
+const tagLoading = ref(false);
 
 const revokeThumbnailPreview = () => {
   if (thumbnailPreview.value) {
@@ -42,6 +48,10 @@ const handleUpload = async () => {
 
   if (!selectedFile.value) {
     error.value = '请选择要上传的视频文件。';
+    return;
+  }
+  if (!selectedCategoryId.value) {
+    error.value = '请选择视频分类。';
     return;
   }
 
@@ -84,6 +94,8 @@ const handleUpload = async () => {
       thumbnailKey: session.thumbnail?.key ?? null,
       title: title.value,
       description: description.value,
+      categoryId: Number(selectedCategoryId.value),
+      tagIds: selectedTagIds.value.map((id) => Number(id)),
     });
 
     successMessage.value = '视频已提交审核';
@@ -91,6 +103,8 @@ const handleUpload = async () => {
     description.value = '';
     selectedFile.value = null;
     selectedThumbnail.value = null;
+    selectedCategoryId.value = '';
+    selectedTagIds.value = [];
     revokeThumbnailPreview();
     if (videoInput.value) videoInput.value.value = '';
     if (thumbnailInput.value) thumbnailInput.value.value = '';
@@ -112,6 +126,34 @@ const handleUpload = async () => {
   }
 };
 
+const loadCategories = async () => {
+  categoryLoading.value = true;
+  try {
+    const response = await api.get('/api/categories');
+    categories.value = Array.isArray(response.data) ? response.data : [];
+  } catch (err) {
+    error.value = friendlyApiError(err, '分类加载失败，请稍后重试。');
+  } finally {
+    categoryLoading.value = false;
+  }
+};
+
+watch(selectedCategoryId, async (categoryId) => {
+  selectedTagIds.value = [];
+  tags.value = [];
+  if (!categoryId) return;
+  tagLoading.value = true;
+  try {
+    const response = await api.get(`/api/categories/${categoryId}/tags`);
+    tags.value = Array.isArray(response.data) ? response.data : [];
+  } catch (err) {
+    error.value = friendlyApiError(err, '标签加载失败，请稍后重试。');
+  } finally {
+    tagLoading.value = false;
+  }
+});
+
+onMounted(loadCategories);
 onBeforeUnmount(revokeThumbnailPreview);
 </script>
 
@@ -174,6 +216,28 @@ onBeforeUnmount(revokeThumbnailPreview);
         </div>
 
         <div class="form-field form-field--wide">
+          <label for="category">视频分类</label>
+          <select id="category" v-model="selectedCategoryId" required :disabled="categoryLoading || uploading">
+            <option value="">{{ categoryLoading ? '分类加载中...' : '请选择分类' }}</option>
+            <option v-for="category in categories" :key="category.id" :value="String(category.id)">
+              {{ category.name }}
+            </option>
+          </select>
+        </div>
+
+        <div class="form-field form-field--wide">
+          <span class="tag-field-label">视频标签（可选）</span>
+          <p v-if="tagLoading" class="tag-field-hint">标签加载中...</p>
+          <p v-else-if="selectedCategoryId && !tags.length" class="tag-field-hint">当前分类暂无可选标签</p>
+          <div v-else class="tag-options" aria-label="视频标签">
+            <label v-for="tag in tags" :key="tag.id" class="tag-option">
+              <input v-model="selectedTagIds" type="checkbox" :value="String(tag.id)" :disabled="uploading">
+              <span>{{ tag.name }}</span>
+            </label>
+          </div>
+        </div>
+
+        <div class="form-field form-field--wide">
           <label for="description">视频简介</label>
           <textarea id="description" v-model="description" placeholder="说说这段视频的故事、亮点或灵感。"></textarea>
         </div>
@@ -207,9 +271,16 @@ onBeforeUnmount(revokeThumbnailPreview);
 .form-field { display: grid; gap: 8px; }
 .form-field--wide { grid-column: 1 / -1; }
 .form-field label { color: var(--text); font-size: .92rem; font-weight: 750; }
-.form-field input, .form-field textarea { box-sizing: border-box; width: 100%; border: 1px solid var(--border); border-radius: 10px; padding: 11px 12px; background: var(--surface-2); color: var(--text); font: inherit; outline-color: var(--brand); }
+.form-field input, .form-field select, .form-field textarea { box-sizing: border-box; width: 100%; border: 1px solid var(--border); border-radius: 10px; padding: 11px 12px; background: var(--surface-2); color: var(--text); font: inherit; outline-color: var(--brand); }
 .form-field input[type='file'] { background: var(--surface-2); }
 .form-field span { color: var(--muted); font-size: .82rem; }
+.tag-field-label { color: var(--text) !important; font-size: .92rem !important; font-weight: 750; }
+.tag-field-hint { color: var(--muted); font-size: .84rem; margin: 0; }
+.tag-options { display: flex; flex-wrap: wrap; gap: 9px; }
+.tag-option { align-items: center; background: var(--surface-2); border: 1px solid var(--border); border-radius: 999px; cursor: pointer; display: inline-flex; gap: 6px; padding: 7px 11px; }
+.tag-option:hover { border-color: color-mix(in srgb, var(--brand) 50%, var(--border)); }
+.tag-option input { accent-color: var(--brand-action); height: 14px; padding: 0; width: 14px; }
+.tag-option span { color: var(--text); font-size: .84rem; font-weight: 700; }
 .media-file-field { position: relative; }
 .media-file-field .media-file-input { position: absolute; inset: auto; width: 1px; height: 1px; padding: 0; border: 0; opacity: 0; pointer-events: none; }
 .media-file-field .media-file-picker { display: grid; gap: 6px; box-sizing: border-box; width: 100%; min-height: 96px; border: 1px solid color-mix(in srgb, var(--border) 78%, var(--brand) 22%); border-radius: 16px; padding: 16px 18px; background: linear-gradient(135deg, var(--surface-2), color-mix(in srgb, var(--surface-2) 84%, var(--brand) 16%)); cursor: pointer; box-shadow: inset 0 1px 0 color-mix(in srgb, white 42%, transparent); transition: border-color .18s ease, box-shadow .18s ease, transform .18s ease; }

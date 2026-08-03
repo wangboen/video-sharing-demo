@@ -92,6 +92,24 @@ class WatchHistoryServiceTest {
     }
 
     @Test
+    void listsHistoryWithinLastWatchedDateRange() {
+        User user = user(7L);
+        Video video = video(42L, VideoStatus.APPROVED);
+        var record = WatchHistory.create(user, video, Instant.parse("2026-08-02T10:00:00Z"));
+        Instant from = Instant.parse("2026-07-28T00:00:00Z");
+        Instant to = Instant.parse("2026-08-03T23:59:59.999999999Z");
+        when(history.findAllByIdUserIdAndLastWatchedAtBetweenOrderByLastWatchedAtDesc(
+                7L, from, to, PageRequest.of(0, 20)))
+                .thenReturn(new PageImpl<>(List.of(record), PageRequest.of(0, 20), 1));
+
+        var result = service.listHistory(user, PageRequest.of(0, 20), "http://cdn.test", from, to);
+
+        assertEquals(1, result.getTotalElements());
+        verify(history).findAllByIdUserIdAndLastWatchedAtBetweenOrderByLastWatchedAtDesc(
+                7L, from, to, PageRequest.of(0, 20));
+    }
+
+    @Test
     void deletesOnlyCurrentUsersHistory() {
         service.deleteOne(user(7L), 42L);
         service.clear(user(7L));

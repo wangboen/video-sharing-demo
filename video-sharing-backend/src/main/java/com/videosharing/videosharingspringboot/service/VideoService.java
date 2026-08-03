@@ -27,6 +27,7 @@ import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.List;
+import java.util.LinkedHashSet;
 import java.util.Locale;
 import java.util.UUID;
 
@@ -42,10 +43,12 @@ public class VideoService {
     private final Clock clock;
     private final String pendingPrefix;
     private final String publicPrefix;
+    private final CategoryTagService categoryTagService;
 
     @Autowired
     public VideoService(VideoRepository videoRepository,
                         ObjectStorageService objectStorage,
+                        CategoryTagService categoryTagService,
                         @Value("${object-storage.validation-dir:${java.io.tmpdir}/video-sharing-validation}") String objectValidationDir,
                         @Value("${object-storage.presign-expiration-minutes:15}") long presignExpirationMinutes,
                         @Value("${video-download.presign-expiration-minutes:15}") long downloadPresignExpirationMinutes,
@@ -54,7 +57,7 @@ public class VideoService {
                         @Value("${object-storage.public-prefix:public/}") String publicPrefix) {
         this(videoRepository, objectStorage, objectValidationDir, Duration.ofMinutes(presignExpirationMinutes),
                 Duration.ofMinutes(downloadPresignExpirationMinutes), Duration.ofDays(rejectedRetentionDays),
-                Clock.systemUTC(), pendingPrefix, publicPrefix);
+                Clock.systemUTC(), pendingPrefix, publicPrefix, categoryTagService);
     }
 
     VideoService(VideoRepository videoRepository,
@@ -62,7 +65,7 @@ public class VideoService {
                  String objectValidationDir,
                  Duration presignExpiration) {
         this(videoRepository, objectStorage, objectValidationDir, presignExpiration, presignExpiration,
-                Duration.ofDays(7), Clock.systemUTC(), "pending/", "public/");
+                Duration.ofDays(7), Clock.systemUTC(), "pending/", "public/", null);
     }
 
     VideoService(VideoRepository videoRepository,
@@ -72,7 +75,7 @@ public class VideoService {
                  Duration rejectedDownloadRetention,
                  Clock clock) {
         this(videoRepository, objectStorage, objectValidationDir, presignExpiration, presignExpiration,
-                rejectedDownloadRetention, clock, "pending/", "public/");
+                rejectedDownloadRetention, clock, "pending/", "public/", null);
     }
 
     VideoService(VideoRepository videoRepository,
@@ -83,7 +86,7 @@ public class VideoService {
                  Duration rejectedDownloadRetention,
                  Clock clock) {
         this(videoRepository, objectStorage, objectValidationDir, presignExpiration, downloadPresignExpiration,
-                rejectedDownloadRetention, clock, "pending/", "public/");
+                rejectedDownloadRetention, clock, "pending/", "public/", null);
     }
 
     VideoService(VideoRepository videoRepository,
@@ -95,6 +98,20 @@ public class VideoService {
                  Clock clock,
                  String pendingPrefix,
                  String publicPrefix) {
+        this(videoRepository, objectStorage, objectValidationDir, presignExpiration, downloadPresignExpiration,
+                rejectedDownloadRetention, clock, pendingPrefix, publicPrefix, null);
+    }
+
+    VideoService(VideoRepository videoRepository,
+                 ObjectStorageService objectStorage,
+                 String objectValidationDir,
+                 Duration presignExpiration,
+                 Duration downloadPresignExpiration,
+                 Duration rejectedDownloadRetention,
+                 Clock clock,
+                 String pendingPrefix,
+                 String publicPrefix,
+                 CategoryTagService categoryTagService) {
         this.videoRepository = videoRepository;
         this.objectStorage = objectStorage;
         this.objectValidationPath = Paths.get(objectValidationDir).toAbsolutePath().normalize();
@@ -104,6 +121,7 @@ public class VideoService {
         this.clock = clock;
         this.pendingPrefix = normalizePrefix(pendingPrefix);
         this.publicPrefix = normalizePrefix(publicPrefix);
+        this.categoryTagService = categoryTagService;
     }
 
     public List<Video> getAllVideos() {
@@ -112,6 +130,20 @@ public class VideoService {
 
     public Page<Video> getRecommendedVideos(Pageable pageable) {
         return videoRepository.findAllByStatusOrderByViewsDescUploadDateDescIdDesc(VideoStatus.APPROVED, pageable);
+    }
+
+    public Page<Video> getRecommendedVideosByTag(Long tagId, Pageable pageable) {
+        if (tagId == null) {
+            return getRecommendedVideos(pageable);
+        }
+        return videoRepository.findRecommendedByTag(VideoStatus.APPROVED, tagId, pageable);
+    }
+
+    public Page<Video> getRecommendedVideosByCategory(Long categoryId, Pageable pageable) {
+        if (categoryId == null) {
+            return getRecommendedVideos(pageable);
+        }
+        return videoRepository.findRecommendedByCategory(VideoStatus.APPROVED, categoryId, pageable);
     }
 
     public Page<Video> searchPublicVideos(String query, Pageable pageable) {
@@ -188,6 +220,7 @@ public class VideoService {
             video.setDescription(request.description());
             video.setFilePath(request.videoKey());
             video.setThumbnailPath(request.thumbnailKey());
+            applyCategoryAndTags(video, request);
             video.setStatus(VideoStatus.PENDING);
             return videoRepository.save(video);
         } catch (IOException | RuntimeException exception) {
@@ -198,6 +231,16 @@ public class VideoService {
             cleanup(stagedVideo == null ? null : stagedVideo.path(), new IOException("validation cleanup"));
             cleanup(stagedThumbnail == null ? null : stagedThumbnail.path(), new IOException("validation cleanup"));
         }
+    }
+
+    private void applyCategoryAndTags(Video video, CompleteUploadRequest request) {
+        if (categoryTagService == null) {
+            return;
+        }
+        CategoryTagService.Selection selection = categoryTagService.resolveUploadSelection(
+                request.categoryId(), request.tagIds());
+        video.setCategory(selection.category());
+        video.setTags(new LinkedHashSet<>(selection.tags()));
     }
 
     public void cancelDirectUpload(User user, CancelUploadRequest request) {

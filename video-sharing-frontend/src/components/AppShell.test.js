@@ -64,6 +64,16 @@ describe('application shell', () => {
     expect(wrapper.get('.app-sidebar__link[href="/register"]').exists()).toBe(true)
   })
 
+  it('keeps personal and upload actions out of the signed-in sidebar', () => {
+    const wrapper = mount(AppSidebar, {
+      props: { user: { username: 'viewer' }, collapsed: false },
+      global,
+    })
+
+    expect(wrapper.find('.app-sidebar__link[href="/dashboard"]').exists()).toBe(false)
+    expect(wrapper.find('.app-sidebar__link[href="/upload"]').exists()).toBe(false)
+  })
+
   it('keeps labeled route entries when the sidebar is collapsed', () => {
     const wrapper = mount(AppSidebar, {
       props: { user: null, collapsed: true },

@@ -39,6 +39,14 @@ describe('视界路由', () => {
     expect(protectedRoutes.every((route) => route.meta.requiresAuth)).toBe(true)
   })
 
+  it('adds a protected watch history route', () => {
+    const watchHistoryRoute = router.getRoutes().find((route) => route.path === '/watch-history')
+
+    expect(watchHistoryRoute).toBeTruthy()
+    expect(watchHistoryRoute.meta.requiresAuth).toBe(true)
+    expect(watchHistoryRoute.meta.title).toBe('播放历史')
+  })
+
   it('为八个既有路由提供预期的中文页面标题', () => {
     const titlesByPath = Object.fromEntries(
       router.getRoutes().map((route) => [route.path, route.meta.title]),

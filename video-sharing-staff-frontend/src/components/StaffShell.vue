@@ -48,6 +48,9 @@ async function logout() {
         <RouterLink v-if="user?.role === 'ADMIN'" :to="{ name: 'reviewers' }">
           审核员管理
         </RouterLink>
+        <RouterLink v-if="user?.role === 'ADMIN'" :to="{ name: 'taxonomy' }">
+          分类标签
+        </RouterLink>
       </nav>
 
       <div class="staff-identity">

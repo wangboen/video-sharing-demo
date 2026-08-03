@@ -5,9 +5,11 @@ import com.videosharing.videosharingspringboot.model.Role;
 import com.videosharing.videosharingspringboot.model.StaffAccount;
 import com.videosharing.videosharingspringboot.model.User;
 import com.videosharing.videosharingspringboot.model.Video;
+import com.videosharing.videosharingspringboot.model.VideoCategory;
 import com.videosharing.videosharingspringboot.model.VideoStatus;
 import com.videosharing.videosharingspringboot.repository.StaffAccountRepository;
 import com.videosharing.videosharingspringboot.repository.UserRepository;
+import com.videosharing.videosharingspringboot.repository.VideoCategoryRepository;
 import com.videosharing.videosharingspringboot.repository.VideoRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -27,6 +29,7 @@ class ReviewerSupervisionServiceTest {
     @Autowired StaffAccountRepository staffAccounts;
     @Autowired UserRepository users;
     @Autowired VideoRepository videos;
+    @Autowired VideoCategoryRepository categories;
     private ReviewerSupervisionService service;
     private User creator;
     private StaffAccount reviewerOne;
@@ -106,6 +109,7 @@ class ReviewerSupervisionServiceTest {
                            String rejectionReason) {
         Video video = new Video();
         video.setUser(creator);
+        video.setCategory(saveCategory());
         video.setTitle(title);
         video.setDescription("description");
         video.setFilePath(title + ".mp4");
@@ -114,5 +118,12 @@ class ReviewerSupervisionServiceTest {
         video.setReviewedAt(reviewedAt);
         video.setRejectionReason(rejectionReason);
         return videos.saveAndFlush(video);
+    }
+
+    private VideoCategory saveCategory() {
+        VideoCategory category = new VideoCategory();
+        category.setCode("supervision-category-" + COUNTER.incrementAndGet());
+        category.setName("电影");
+        return categories.saveAndFlush(category);
     }
 }

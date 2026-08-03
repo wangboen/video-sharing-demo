@@ -6,9 +6,11 @@ import com.videosharing.videosharingspringboot.model.Role;
 import com.videosharing.videosharingspringboot.model.StaffAccount;
 import com.videosharing.videosharingspringboot.model.User;
 import com.videosharing.videosharingspringboot.model.Video;
+import com.videosharing.videosharingspringboot.model.VideoCategory;
 import com.videosharing.videosharingspringboot.model.VideoStatus;
 import com.videosharing.videosharingspringboot.repository.StaffAccountRepository;
 import com.videosharing.videosharingspringboot.repository.UserRepository;
+import com.videosharing.videosharingspringboot.repository.VideoCategoryRepository;
 import com.videosharing.videosharingspringboot.repository.VideoRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -33,6 +35,7 @@ import static org.junit.jupiter.api.Assertions.*;
 @Transactional(propagation = Propagation.NOT_SUPPORTED)
 class ModerationConcurrencyTest {
     @Autowired VideoRepository videos;
+    @Autowired VideoCategoryRepository categories;
     @Autowired UserRepository users;
     @Autowired StaffAccountRepository staffAccounts;
     @Autowired TransactionTemplate transactions;
@@ -154,10 +157,18 @@ class ModerationConcurrencyTest {
     private void saveVideo(User creator, String title) {
         Video video = new Video();
         video.setUser(creator);
+        video.setCategory(saveCategory());
         video.setTitle(title);
         video.setFilePath(title + ".mp4");
         video.setStatus(VideoStatus.PENDING);
         videos.saveAndFlush(video);
+    }
+
+    private VideoCategory saveCategory() {
+        VideoCategory category = new VideoCategory();
+        category.setCode("moderation-category-" + java.util.UUID.randomUUID());
+        category.setName("电影");
+        return categories.saveAndFlush(category);
     }
 
     private record ClaimResults(Optional<ModerationVideoResponse> first,

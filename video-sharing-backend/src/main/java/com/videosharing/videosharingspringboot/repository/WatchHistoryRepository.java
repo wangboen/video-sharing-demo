@@ -8,6 +8,7 @@ import org.springframework.data.jpa.repository.EntityGraph;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.stereotype.Repository;
 
+import java.time.Instant;
 import java.util.Optional;
 
 @Repository
@@ -16,6 +17,10 @@ public interface WatchHistoryRepository extends JpaRepository<WatchHistory, Watc
 
     @EntityGraph(attributePaths = {"video", "video.user"})
     Page<WatchHistory> findAllByIdUserIdOrderByLastWatchedAtDesc(Long userId, Pageable pageable);
+
+    @EntityGraph(attributePaths = {"video", "video.user"})
+    Page<WatchHistory> findAllByIdUserIdAndLastWatchedAtBetweenOrderByLastWatchedAtDesc(
+            Long userId, Instant from, Instant to, Pageable pageable);
 
     void deleteByIdUserIdAndIdVideoId(Long userId, Long videoId);
 

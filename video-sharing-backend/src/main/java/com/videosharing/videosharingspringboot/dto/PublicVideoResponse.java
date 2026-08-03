@@ -6,6 +6,8 @@ import org.springframework.web.util.UriUtils;
 
 import java.nio.charset.StandardCharsets;
 import java.time.LocalDateTime;
+import java.util.Comparator;
+import java.util.List;
 
 public record PublicVideoResponse(
         Long id,
@@ -14,6 +16,8 @@ public record PublicVideoResponse(
         String uploader,
         String videoUrl,
         String thumbnailUrl,
+        CategoryResponse category,
+        List<TagResponse> tags,
         LocalDateTime uploadDate,
         Long views
 ) {
@@ -28,7 +32,20 @@ public record PublicVideoResponse(
         return new PublicVideoResponse(video.getId(), video.getTitle(), video.getDescription(),
                 video.getUser().getUsername(), publicVideoUrl(video.getFilePath(), objectStoragePublicBaseUrl),
                 video.getThumbnailPath() == null ? null : publicThumbnailUrl(video.getThumbnailPath(), objectStoragePublicBaseUrl),
+                CategoryResponse.from(video.getCategory()), tagResponses(video),
                 video.getUploadDate(), video.getViews());
+    }
+
+    private static List<TagResponse> tagResponses(Video video) {
+        if (video.getTags() == null || video.getTags().isEmpty()) {
+            return List.of();
+        }
+        return video.getTags().stream()
+                .sorted(Comparator.comparingInt(com.videosharing.videosharingspringboot.model.VideoTag::getSortOrder)
+                        .thenComparing(com.videosharing.videosharingspringboot.model.VideoTag::getId,
+                                Comparator.nullsLast(Long::compareTo)))
+                .map(TagResponse::from)
+                .toList();
     }
 
     private static String publicVideoUrl(String fileName, String objectStoragePublicBaseUrl) {

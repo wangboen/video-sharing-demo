@@ -44,8 +44,10 @@ describe('staff application shell', () => {
 
     expect(reviewer.findAll('[data-route="moderation"]')).toHaveLength(2)
     expect(reviewer.find('[data-route="reviewers"]').exists()).toBe(false)
+    expect(reviewer.find('[data-route="taxonomy"]').exists()).toBe(false)
     expect(admin.findAll('[data-route="moderation"]')).toHaveLength(0)
     expect(admin.findAll('[data-route="reviewers"]')).toHaveLength(2)
+    expect(admin.findAll('[data-route="taxonomy"]')).toHaveLength(1)
   })
 
   it('clears local staff state and returns to login even when logout fails', async () => {

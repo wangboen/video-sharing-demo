@@ -6,6 +6,8 @@ import org.hibernate.annotations.CreationTimestamp;
 
 import java.time.Instant;
 import java.time.LocalDateTime;
+import java.util.LinkedHashSet;
+import java.util.Set;
 
 @Entity
 @Table(name = "videos")
@@ -29,6 +31,18 @@ public class Video {
     private String filePath;
 
     private String thumbnailPath;
+
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "category_id", nullable = false)
+    private VideoCategory category;
+
+    @ManyToMany
+    @JoinTable(
+            name = "video_tag_relation",
+            joinColumns = @JoinColumn(name = "video_id"),
+            inverseJoinColumns = @JoinColumn(name = "tag_id")
+    )
+    private Set<VideoTag> tags = new LinkedHashSet<>();
 
     @CreationTimestamp
     @Column(name = "upload_date", nullable = false, updatable = false)

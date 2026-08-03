@@ -77,8 +77,19 @@ public class VideoController {
     @GetMapping("/recommended")
     public ResponseEntity<Page<PublicVideoResponse>> getRecommendedVideos(
             @RequestParam(defaultValue = "0") int page,
-            @RequestParam(defaultValue = "12") int size) {
-        return ResponseEntity.ok(videoService.getRecommendedVideos(pageRequest(page, size))
+            @RequestParam(defaultValue = "12") int size,
+            @RequestParam(required = false) Long tagId,
+            @RequestParam(required = false) Long categoryId) {
+        PageRequest pageRequest = pageRequest(page, size);
+        Page<Video> videos;
+        if (categoryId != null) {
+            videos = videoService.getRecommendedVideosByCategory(categoryId, pageRequest);
+        } else if (tagId != null) {
+            videos = videoService.getRecommendedVideosByTag(tagId, pageRequest);
+        } else {
+            videos = videoService.getRecommendedVideos(pageRequest);
+        }
+        return ResponseEntity.ok(videos
                 .map(video -> PublicVideoResponse.from(video, objectStoragePublicBaseUrl)));
     }
 

@@ -40,6 +40,28 @@ class VideoServiceSearchTest {
         assertEquals(result, service.searchPublicVideos("   ", pageable));
     }
 
+    @Test
+    void recommendedVideosByTagUsesApprovedTagRelationQuery() {
+        var pageable = PageRequest.of(0, 12);
+        var result = new PageImpl<>(List.of(video()), pageable, 1);
+        when(repository.findRecommendedByTag(VideoStatus.APPROVED, 42L, pageable)).thenReturn(result);
+
+        assertEquals(result, service.getRecommendedVideosByTag(42L, pageable));
+
+        verify(repository).findRecommendedByTag(VideoStatus.APPROVED, 42L, pageable);
+    }
+
+    @Test
+    void recommendedVideosByCategoryUsesApprovedCategoryQuery() {
+        var pageable = PageRequest.of(0, 12);
+        var result = new PageImpl<>(List.of(video()), pageable, 1);
+        when(repository.findRecommendedByCategory(VideoStatus.APPROVED, 7L, pageable)).thenReturn(result);
+
+        assertEquals(result, service.getRecommendedVideosByCategory(7L, pageable));
+
+        verify(repository).findRecommendedByCategory(VideoStatus.APPROVED, 7L, pageable);
+    }
+
     private static Video video() {
         Video video = new Video();
         video.setId(10L);

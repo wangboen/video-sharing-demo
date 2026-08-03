@@ -21,6 +21,27 @@ import java.util.Optional;
 public interface VideoRepository extends JpaRepository<Video, Long> {
     List<Video> findAllByStatusOrderByUploadDateAscIdAsc(VideoStatus status);
     Page<Video> findAllByStatusOrderByViewsDescUploadDateDescIdDesc(VideoStatus status, Pageable pageable);
+    @Query("""
+            select v from Video v
+            where v.status = :status
+              and v.category.id = :categoryId
+              and v.category.enabled = true
+            order by v.views desc, v.uploadDate desc, v.id desc
+            """)
+    Page<Video> findRecommendedByCategory(@Param("status") VideoStatus status,
+                                          @Param("categoryId") Long categoryId,
+                                          Pageable pageable);
+    @Query("""
+            select distinct v from Video v
+            join v.tags tag
+            where v.status = :status
+              and tag.id = :tagId
+              and tag.enabled = true
+            order by v.views desc, v.uploadDate desc, v.id desc
+            """)
+    Page<Video> findRecommendedByTag(@Param("status") VideoStatus status,
+                                     @Param("tagId") Long tagId,
+                                     Pageable pageable);
     Optional<Video> findByIdAndStatus(Long id, VideoStatus status);
     Page<Video> findAllByUserIdOrderByUploadDateDescIdDesc(Long userId, Pageable pageable);
     Optional<Video> findByIdAndUserId(Long id, Long userId);

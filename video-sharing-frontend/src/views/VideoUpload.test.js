@@ -2,6 +2,7 @@ import { flushPromises, mount } from '@vue/test-utils'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 const mocks = vi.hoisted(() => ({
+  get: vi.fn(),
   post: vi.fn(),
   apiPut: vi.fn(),
   rawPut: vi.fn(),
@@ -13,7 +14,7 @@ vi.mock('vue-router', () => ({
 }))
 
 vi.mock('../services/api', () => ({
-  default: { post: mocks.post, put: mocks.apiPut },
+  default: { get: mocks.get, post: mocks.post, put: mocks.apiPut },
 }))
 
 vi.mock('axios', () => ({
@@ -59,13 +60,31 @@ async function selectFile(wrapper, selector, file) {
   await input.trigger('change')
 }
 
+async function chooseCategory(wrapper) {
+  await wrapper.get('#category').setValue('1')
+  await flushPromises()
+}
+
 describe('video direct upload', () => {
   beforeEach(() => {
+    mocks.get.mockReset()
     mocks.post.mockReset()
     mocks.apiPut.mockReset()
     mocks.rawPut.mockReset()
     mocks.generateThumbnailFromVideo.mockReset()
     mocks.generateThumbnailFromVideo.mockResolvedValue(uploadedFile('auto-cover.jpg', 'image/jpeg'))
+    mocks.get.mockImplementation((url) => {
+      if (url === '/api/categories') {
+        return Promise.resolve({ data: [{ id: 1, code: 'movie', name: '电影' }] })
+      }
+      if (url === '/api/categories/1/tags') {
+        return Promise.resolve({ data: [
+          { id: 10, code: 'movie_action', name: '动作' },
+          { id: 11, code: 'movie_review', name: '影评' },
+        ] })
+      }
+      return Promise.resolve({ data: [] })
+    })
     URL.createObjectURL = vi.fn(() => 'blob:thumbnail')
     URL.revokeObjectURL = vi.fn()
   })
@@ -82,9 +101,12 @@ describe('video direct upload', () => {
     mocks.rawPut.mockResolvedValue({})
     const wrapper = mount(VideoUpload)
     const video = uploadedFile('demo.mp4', 'video/mp4')
+    await flushPromises()
 
     await wrapper.get('#title').setValue('My video')
     await wrapper.get('#description').setValue('Description')
+    await chooseCategory(wrapper)
+    await wrapper.get('input[value="10"]').setValue(true)
     await selectFile(wrapper, '#file', video)
     await wrapper.get('form').trigger('submit')
     await flushPromises()
@@ -109,7 +131,23 @@ describe('video direct upload', () => {
       thumbnailKey: thumbnailTarget.key,
       title: 'My video',
       description: 'Description',
+      categoryId: 1,
+      tagIds: [10],
     })
+  })
+
+  it('requires a category before starting upload', async () => {
+    const wrapper = mount(VideoUpload)
+    const video = uploadedFile('demo.mp4', 'video/mp4')
+    await flushPromises()
+
+    await wrapper.get('#title').setValue('My video')
+    await selectFile(wrapper, '#file', video)
+    await wrapper.get('form').trigger('submit')
+    await flushPromises()
+
+    expect(mocks.post).not.toHaveBeenCalled()
+    expect(wrapper.get('[role="alert"]').text()).toContain('分类')
   })
 
   it('uploads the thumbnail object when a thumbnail is selected', async () => {
@@ -125,8 +163,10 @@ describe('video direct upload', () => {
     const wrapper = mount(VideoUpload)
     const video = uploadedFile('demo.mp4', 'video/mp4')
     const thumbnail = uploadedFile('cover.png', 'image/png')
+    await flushPromises()
 
     await wrapper.get('#title').setValue('My video')
+    await chooseCategory(wrapper)
     await selectFile(wrapper, '#file', video)
     await selectFile(wrapper, '#thumbnail', thumbnail)
     await wrapper.get('form').trigger('submit')
@@ -147,8 +187,10 @@ describe('video direct upload', () => {
     mocks.rawPut.mockRejectedValueOnce(new Error('minio failed'))
     const wrapper = mount(VideoUpload)
     const video = uploadedFile('demo.mp4', 'video/mp4')
+    await flushPromises()
 
     await wrapper.get('#title').setValue('My video')
+    await chooseCategory(wrapper)
     await selectFile(wrapper, '#file', video)
     await wrapper.get('form').trigger('submit')
     await flushPromises()
@@ -177,8 +219,10 @@ describe('video direct upload', () => {
     const wrapper = mount(VideoUpload)
     const video = uploadedFile('demo.mp4', 'video/mp4')
     const thumbnail = uploadedFile('cover.png', 'image/png')
+    await flushPromises()
 
     await wrapper.get('#title').setValue('My video')
+    await chooseCategory(wrapper)
     await selectFile(wrapper, '#file', video)
     await selectFile(wrapper, '#thumbnail', thumbnail)
     await wrapper.get('form').trigger('submit')
@@ -197,8 +241,10 @@ describe('video direct upload', () => {
     mocks.post.mockReturnValue(request.promise)
     const wrapper = mount(VideoUpload)
     const video = uploadedFile('demo.mp4', 'video/mp4')
+    await flushPromises()
 
     await wrapper.get('#title').setValue('My video')
+    await chooseCategory(wrapper)
     await selectFile(wrapper, '#file', video)
     await wrapper.get('form').trigger('submit')
     await wrapper.get('form').trigger('submit')
@@ -218,8 +264,10 @@ describe('video direct upload', () => {
     const wrapper = mount(VideoUpload)
     const video = uploadedFile('demo.mp4', 'video/mp4')
     const thumbnail = uploadedFile('cover.png', 'image/png')
+    await flushPromises()
 
     await wrapper.get('#title').setValue('My video')
+    await chooseCategory(wrapper)
     await selectFile(wrapper, '#file', video)
     await selectFile(wrapper, '#thumbnail', thumbnail)
     await wrapper.get('form').trigger('submit')

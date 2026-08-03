@@ -35,6 +35,7 @@ body {
 
 button,
 input,
+select,
 textarea {
   font: inherit;
 }
@@ -47,6 +48,7 @@ a {
 button:focus-visible,
 a:focus-visible,
 input:focus-visible,
+select:focus-visible,
 textarea:focus-visible {
   outline: 3px solid #173b8f;
   outline-offset: 3px;
@@ -174,6 +176,9 @@ h3 {
 }
 
 .form-stack input,
+.form-stack select,
+.form-stack textarea,
+.toolbar-form select,
 .decision-controls textarea {
   width: 100%;
   border: 1px solid #bbc5d4;
@@ -182,9 +187,15 @@ h3 {
   color: var(--ink);
 }
 
-.form-stack input {
+.form-stack input,
+.form-stack select {
   height: 46px;
   padding: 0 13px;
+}
+
+.form-stack textarea {
+  padding: 11px 12px;
+  resize: vertical;
 }
 
 .decision-controls textarea {
@@ -194,6 +205,9 @@ h3 {
 }
 
 .form-stack input:hover,
+.form-stack select:hover,
+.form-stack textarea:hover,
+.toolbar-form select:hover,
 .decision-controls textarea:hover {
   border-color: #8794a8;
 }
@@ -823,6 +837,12 @@ h3 {
   color: var(--ink);
 }
 
+.toolbar-form select {
+  width: min(100%, 280px);
+  height: 42px;
+  padding: 0 12px;
+}
+
 .directory-empty {
   display: grid;
   min-height: 260px;
@@ -882,6 +902,52 @@ tr.is-selected td {
   background: #eef3ff;
 }
 
+tr.is-muted-row td {
+  color: var(--muted);
+  background: #f8fafc;
+}
+
+.role-chip--disabled {
+  border-color: #c7d0dd;
+  background: #f4f6f9;
+  color: var(--muted);
+}
+
+.form-actions,
+.table-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.taxonomy-layout {
+  display: grid;
+  grid-template-columns: 350px minmax(0, 1fr);
+  align-items: start;
+  gap: 24px;
+}
+
+.taxonomy-layout--tags {
+  margin-top: 24px;
+}
+
+.taxonomy-editor {
+  position: sticky;
+  top: 94px;
+  padding: 28px;
+}
+
+.taxonomy-editor h2,
+.taxonomy-directory h2 {
+  margin-bottom: 24px;
+  font-size: 1.4rem;
+}
+
+.taxonomy-directory {
+  min-height: 430px;
+  padding: 28px;
+}
+
 .pagination-bar {
   display: flex;
   align-items: center;
@@ -928,8 +994,13 @@ tr.is-selected td {
     grid-template-columns: 1fr;
   }
 
-  .create-reviewer {
+  .create-reviewer,
+  .taxonomy-editor {
     position: static;
+  }
+
+  .taxonomy-layout {
+    grid-template-columns: 1fr;
   }
 }
 
@@ -1036,6 +1107,7 @@ tr.is-selected td {
   }
 
   .toolbar-form input,
+  .toolbar-form select,
   .toolbar-form .button {
     width: 100%;
   }

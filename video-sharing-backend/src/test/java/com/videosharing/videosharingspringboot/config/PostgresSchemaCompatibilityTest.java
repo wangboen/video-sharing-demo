@@ -29,8 +29,10 @@ class PostgresSchemaCompatibilityTest {
 
         jdbc.update("insert into users (username, password) values (?, ?)", "postgres-user", "encoded");
         Long userId = jdbc.queryForObject("select id from users where username = ?", Long.class, "postgres-user");
-        jdbc.update("insert into videos (user_id, title, file_path) values (?, ?, ?)",
-                userId, "PostgreSQL video", "postgres.mp4");
+        jdbc.update("insert into video_category (code, name) values (?, ?)", "movie", "电影");
+        Long categoryId = jdbc.queryForObject("select id from video_category where code = ?", Long.class, "movie");
+        jdbc.update("insert into videos (user_id, category_id, title, file_path) values (?, ?, ?, ?)",
+                userId, categoryId, "PostgreSQL video", "postgres.mp4");
         Long videoId = jdbc.queryForObject("select id from videos where file_path = ?", Long.class, "postgres.mp4");
         jdbc.update("""
                 insert into comment_relations

@@ -4,6 +4,7 @@ import com.videosharing.videosharingspringboot.model.CommentRelation;
 import com.videosharing.videosharingspringboot.model.CommentStatus;
 import com.videosharing.videosharingspringboot.model.User;
 import com.videosharing.videosharingspringboot.model.Video;
+import com.videosharing.videosharingspringboot.model.VideoCategory;
 import com.videosharing.videosharingspringboot.service.CommentLikeService;
 import com.videosharing.videosharingspringboot.service.HotCommentCacheService;
 import org.junit.jupiter.api.Test;
@@ -31,6 +32,9 @@ class CommentRelationRepositoryTest {
 
     @Autowired
     private VideoRepository videos;
+
+    @Autowired
+    private VideoCategoryRepository categories;
 
     @Autowired
     private CommentLikeRepository likes;
@@ -144,8 +148,16 @@ class CommentRelationRepositoryTest {
     private Video saveVideo(User user, String filePath) {
         Video video = new Video();
         video.setUser(user);
+        video.setCategory(saveCategory());
         video.setTitle("Comment repository video");
         video.setFilePath(filePath);
         return videos.saveAndFlush(video);
+    }
+
+    private VideoCategory saveCategory() {
+        VideoCategory category = new VideoCategory();
+        category.setCode("comment-repository-category-" + System.nanoTime());
+        category.setName("电影");
+        return categories.saveAndFlush(category);
     }
 }

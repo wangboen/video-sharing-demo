@@ -6,6 +6,7 @@ import UserDashboard from '../views/UserDashboard.vue'
 import VideoUpload from '../views/VideoUpload.vue'
 import VideoList from '../views/VideoList.vue'
 import VideoPlayer from '../views/VideoPlayer.vue' // Import VideoPlayer component
+import WatchHistoryView from '../views/WatchHistoryView.vue'
 import { clearAuth, getAuthToken, getStoredUser, USER_ROLE } from '../services/auth'
 
 const router = createRouter({
@@ -46,6 +47,12 @@ const router = createRouter({
       name: 'upload',
       component: VideoUpload,
       meta: { requiresAuth: true, title: '上传视频' }
+    },
+    {
+      path: '/watch-history',
+      name: 'watch-history',
+      component: WatchHistoryView,
+      meta: { requiresAuth: true, title: '播放历史' }
     },
     {
       path: '/videos',

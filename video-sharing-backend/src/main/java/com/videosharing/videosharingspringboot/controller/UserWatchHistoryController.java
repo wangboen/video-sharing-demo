@@ -17,6 +17,9 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
+import java.time.Instant;
+import java.time.LocalDate;
+import java.time.ZoneOffset;
 import java.util.Optional;
 
 @RestController
@@ -38,11 +41,15 @@ public class UserWatchHistoryController {
     public ResponseEntity<Page<WatchHistoryResponse>> list(
             Authentication authentication,
             @RequestParam(defaultValue = "0") int page,
-            @RequestParam(defaultValue = "20") int size) {
+            @RequestParam(defaultValue = "20") int size,
+            @RequestParam(required = false) String from,
+            @RequestParam(required = false) String to) {
         return ResponseEntity.ok(watchHistoryService.listHistory(
                 currentUser(authentication),
                 pageRequest(page, size),
-                objectStoragePublicBaseUrl));
+                objectStoragePublicBaseUrl,
+                startOfDay(from),
+                endOfDay(to)));
     }
 
     @GetMapping("/{videoId}")
@@ -81,5 +88,19 @@ public class UserWatchHistoryController {
 
     private static PageRequest pageRequest(int page, int size) {
         return PageRequest.of(Math.max(page, 0), Math.max(1, Math.min(size, 50)));
+    }
+
+    private static Instant startOfDay(String value) {
+        if (value == null || value.isBlank()) {
+            return null;
+        }
+        return LocalDate.parse(value).atStartOfDay(ZoneOffset.UTC).toInstant();
+    }
+
+    private static Instant endOfDay(String value) {
+        if (value == null || value.isBlank()) {
+            return null;
+        }
+        return LocalDate.parse(value).plusDays(1).atStartOfDay(ZoneOffset.UTC).toInstant().minusNanos(1);
     }
 }

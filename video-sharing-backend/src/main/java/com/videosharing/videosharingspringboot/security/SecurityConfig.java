@@ -44,7 +44,7 @@ public class SecurityConfig {
                         .requestMatchers("/api/auth/register", "/api/auth/login", "/api/staff/auth/login").permitAll()
                         .requestMatchers(HttpMethod.GET, "/api/videos", "/api/videos/recommended",
                                 "/api/videos/search", "/api/videos/*", "/api/videos/*/comments",
-                                "/api/comments/commands/*").permitAll()
+                                "/api/comments/commands/*", "/api/categories", "/api/categories/*/tags").permitAll()
                         .requestMatchers("/api/admin/**").hasRole("ADMIN")
                         .requestMatchers("/api/moderation/**").hasRole("REVIEWER")
                         .requestMatchers("/api/videos/upload-session", "/api/videos/upload-complete",

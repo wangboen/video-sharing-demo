@@ -70,6 +70,23 @@ public class WatchHistoryService {
     }
 
     @Transactional(readOnly = true)
+    public Page<WatchHistoryResponse> listHistory(
+            User user,
+            Pageable pageable,
+            String objectStoragePublicBaseUrl,
+            Instant from,
+            Instant to) {
+        if (from == null && to == null) {
+            return listHistory(user, pageable, objectStoragePublicBaseUrl);
+        }
+        Instant effectiveFrom = from == null ? Instant.EPOCH : from;
+        Instant effectiveTo = to == null ? Instant.parse("9999-12-31T23:59:59Z") : to;
+        return history.findAllByIdUserIdAndLastWatchedAtBetweenOrderByLastWatchedAtDesc(
+                        user.getId(), effectiveFrom, effectiveTo, pageable)
+                .map(record -> WatchHistoryResponse.from(record, objectStoragePublicBaseUrl));
+    }
+
+    @Transactional(readOnly = true)
     public Optional<WatchHistoryResponse> getOne(User user, Long videoId, String objectStoragePublicBaseUrl) {
         return history.findByIdUserIdAndIdVideoId(user.getId(), videoId)
                 .map(record -> WatchHistoryResponse.from(record, objectStoragePublicBaseUrl));

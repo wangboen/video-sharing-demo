@@ -12,6 +12,9 @@ import org.springframework.data.domain.PageRequest;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.test.util.ReflectionTestUtils;
 
+import java.time.Instant;
+import java.time.LocalDate;
+import java.time.ZoneOffset;
 import java.util.Optional;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -47,13 +50,27 @@ class WatchHistoryControllerTest {
     @Test
     void historyEndpointUsesCurrentUserAndSafePagination() {
         var auth = new UsernamePasswordAuthenticationToken("viewer", null);
-        when(history.listHistory(viewer, PageRequest.of(0, 50), ""))
+        when(history.listHistory(viewer, PageRequest.of(0, 50), "", null, null))
                 .thenReturn(Page.empty(PageRequest.of(0, 50)));
 
-        var response = userController.list(auth, -1, 99);
+        var response = userController.list(auth, -1, 99, null, null);
 
         assertEquals(200, response.getStatusCode().value());
-        verify(history).listHistory(viewer, PageRequest.of(0, 50), "");
+        verify(history).listHistory(viewer, PageRequest.of(0, 50), "", null, null);
+    }
+
+    @Test
+    void historyEndpointPassesInclusiveDateFilters() {
+        var auth = new UsernamePasswordAuthenticationToken("viewer", null);
+        Instant from = LocalDate.parse("2026-07-28").atStartOfDay(ZoneOffset.UTC).toInstant();
+        Instant to = LocalDate.parse("2026-08-03").plusDays(1).atStartOfDay(ZoneOffset.UTC).toInstant().minusNanos(1);
+        when(history.listHistory(viewer, PageRequest.of(0, 20), "", from, to))
+                .thenReturn(Page.empty(PageRequest.of(0, 20)));
+
+        var response = userController.list(auth, 0, 20, "2026-07-28", "2026-08-03");
+
+        assertEquals(200, response.getStatusCode().value());
+        verify(history).listHistory(viewer, PageRequest.of(0, 20), "", from, to);
     }
 
     @Test

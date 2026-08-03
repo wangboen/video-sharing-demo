@@ -19,16 +19,7 @@ defineProps({
       <RouterLink class="app-sidebar__link" to="/about" aria-label="关于视界">
         <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="8" /><path d="M12 11v5M12 8h.01" /></svg><span>关于</span>
       </RouterLink>
-
-      <div class="app-sidebar__divider" />
-
-      <RouterLink v-if="user" class="app-sidebar__link" to="/dashboard" aria-label="个人中心">
-        <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="8" r="3" /><path d="M5 20c.5-4 2.8-6 7-6s6.5 2 7 6" /></svg><span>个人中心</span>
-      </RouterLink>
-      <RouterLink v-if="user" class="app-sidebar__link" to="/upload" aria-label="发布视频">
-        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14" /></svg><span>发布视频</span>
-      </RouterLink>
-      <RouterLink v-else class="app-sidebar__link" to="/login" aria-label="登录">
+      <RouterLink v-if="!user" class="app-sidebar__link" to="/login" aria-label="登录">
         <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M14 8V5a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h7a2 2 0 0 0 2-2v-3M10 12h11M18 8l4 4-4 4" /></svg><span>登录</span>
       </RouterLink>
       <RouterLink v-if="!user" class="app-sidebar__link" to="/register" aria-label="注册">

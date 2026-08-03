@@ -13,7 +13,7 @@ describe('staff route contract', () => {
     )).toEqual({ name: 'login' })
   })
 
-  it('allows reviewers into moderation and admins only into reviewer management', () => {
+  it('allows reviewers into moderation and admins into admin-only management pages', () => {
     const reviewer = { user: { role: 'REVIEWER' } }
     const admin = { user: { role: 'ADMIN' } }
 
@@ -28,6 +28,14 @@ describe('staff route contract', () => {
     )).toEqual({ name: 'moderation' })
     expect(resolveStaffAccess(
       { path: '/reviewers', meta: { adminOnly: true } },
+      admin,
+    )).toBeNull()
+    expect(resolveStaffAccess(
+      { path: '/taxonomy', meta: { adminOnly: true } },
+      reviewer,
+    )).toEqual({ name: 'moderation' })
+    expect(resolveStaffAccess(
+      { path: '/taxonomy', meta: { adminOnly: true } },
       admin,
     )).toBeNull()
   })
@@ -49,5 +57,6 @@ describe('staff route contract', () => {
 
     expect(viteSource).toMatch(/base:\s*['"]\/staff\/['"]/)
     expect(routerSource).toContain('createWebHistory(import.meta.env.BASE_URL)')
+    expect(routerSource).toContain("name: 'taxonomy'")
   })
 })

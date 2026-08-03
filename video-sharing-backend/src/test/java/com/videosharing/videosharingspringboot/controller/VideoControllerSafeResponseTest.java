@@ -81,12 +81,40 @@ class VideoControllerSafeResponseTest {
         var pageable = PageRequest.of(0, 6);
         when(videos.getRecommendedVideos(pageable)).thenReturn(new PageImpl<>(List.of(recommended), pageable, 8));
 
-        var response = controller.getRecommendedVideos(0, 6).getBody();
+        var response = controller.getRecommendedVideos(0, 6, null, null).getBody();
 
         assertEquals(0, response.getNumber());
         assertEquals(6, response.getSize());
         assertEquals(8, response.getTotalElements());
         assertEquals("Recommended", response.getContent().get(0).title());
+    }
+
+    @Test
+    void recommendedVideosCanBeFilteredByTag() {
+        Video recommended = video(VideoStatus.APPROVED);
+        recommended.setId(13L);
+        recommended.setTitle("Tagged recommendation");
+        var pageable = PageRequest.of(0, 6);
+        when(videos.getRecommendedVideosByTag(99L, pageable)).thenReturn(new PageImpl<>(List.of(recommended), pageable, 1));
+
+        var response = controller.getRecommendedVideos(0, 6, 99L, null).getBody();
+
+        assertEquals(1, response.getTotalElements());
+        assertEquals("Tagged recommendation", response.getContent().get(0).title());
+    }
+
+    @Test
+    void recommendedVideosCanBeFilteredByCategory() {
+        Video recommended = video(VideoStatus.APPROVED);
+        recommended.setId(14L);
+        recommended.setTitle("Category recommendation");
+        var pageable = PageRequest.of(0, 6);
+        when(videos.getRecommendedVideosByCategory(5L, pageable)).thenReturn(new PageImpl<>(List.of(recommended), pageable, 1));
+
+        var response = controller.getRecommendedVideos(0, 6, null, 5L).getBody();
+
+        assertEquals(1, response.getTotalElements());
+        assertEquals("Category recommendation", response.getContent().get(0).title());
     }
 
     @Test

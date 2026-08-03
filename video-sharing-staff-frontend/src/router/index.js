@@ -3,6 +3,7 @@ import { isStaffRole, readStaffSession } from '../services/staffAuth'
 import StaffLoginView from '../views/StaffLoginView.vue'
 import ModerationView from '../views/ModerationView.vue'
 import ReviewerManagementView from '../views/ReviewerManagementView.vue'
+import CategoryTagManagementView from '../views/CategoryTagManagementView.vue'
 
 function roleHome(role) {
   return role === 'ADMIN'
@@ -49,6 +50,12 @@ export function createStaffRouter(history = createWebHistory(import.meta.env.BAS
         path: '/reviewers',
         name: 'reviewers',
         component: ReviewerManagementView,
+        meta: { adminOnly: true },
+      },
+      {
+        path: '/taxonomy',
+        name: 'taxonomy',
+        component: CategoryTagManagementView,
         meta: { adminOnly: true },
       },
       {

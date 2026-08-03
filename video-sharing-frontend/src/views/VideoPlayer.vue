@@ -280,6 +280,11 @@ onBeforeUnmount(() => {
           </div>
           <p class="local-action-note">点赞和稍后观看仅在当前页面和本次浏览中有效，不会同步到账号。</p>
 
+          <div v-if="video.category || video.tags?.length" class="video-taxonomy">
+            <span v-if="video.category" class="video-taxonomy__category">{{ video.category.name }}</span>
+            <span v-for="tag in video.tags || []" :key="tag.id" class="video-taxonomy__tag">{{ tag.name }}</span>
+          </div>
+
           <div class="author-panel">
             <span class="author-panel__avatar" aria-hidden="true">{{ authorInitial }}</span>
             <div>
@@ -326,6 +331,10 @@ h1 { font-size: clamp(1.45rem, 2.5vw, 2.15rem); letter-spacing: -.045em; line-he
 .video-actions button { background: var(--surface-2); border: 1px solid var(--border); border-radius: 999px; color: var(--text); cursor: pointer; font: inherit; font-size: .84rem; font-weight: 700; padding: 9px 13px; }
 .video-actions button:hover, .video-actions button.is-active { background: color-mix(in srgb, var(--brand) 18%, var(--surface)); border-color: color-mix(in srgb, var(--brand) 60%, var(--border)); color: var(--brand); }
 .local-action-note { color: var(--muted); font-size: .78rem; margin: 10px 0 0; text-align: right; }
+.video-taxonomy { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 16px; }
+.video-taxonomy__category, .video-taxonomy__tag { border-radius: 999px; font-size: .82rem; font-weight: 750; padding: 6px 10px; }
+.video-taxonomy__category { background: color-mix(in srgb, var(--brand) 18%, var(--surface-2)); color: var(--brand); }
+.video-taxonomy__tag { background: var(--surface-2); color: var(--text); }
 .author-panel { align-items: center; border-bottom: 1px solid var(--border); border-top: 1px solid var(--border); display: flex; gap: 12px; margin-top: 22px; padding: 16px 0; }
 .author-panel__avatar { align-items: center; background: color-mix(in srgb, var(--brand) 32%, var(--surface-2)); border-radius: 50%; color: var(--text); display: inline-flex; flex: 0 0 auto; font-weight: 800; height: 42px; justify-content: center; width: 42px; }
 .author-panel__name { font-weight: 750; margin: 0; }.author-panel__bio { color: var(--muted); font-size: .86rem; line-height: 1.45; margin: 3px 0 0; }
