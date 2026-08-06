@@ -147,6 +147,9 @@ async function loadCategories() {
   listError.value = ''
   try {
     const { data } = await api.get('/api/admin/categories')
+
+    console.log(data)
+
     categories.value = Array.isArray(data) ? data.slice().sort(sortTaxonomy) : []
     categoryPage.value = Math.min(categoryPage.value, categoryTotalPages.value - 1)
     if (!categoryFilter.value && categories.value.length) {
