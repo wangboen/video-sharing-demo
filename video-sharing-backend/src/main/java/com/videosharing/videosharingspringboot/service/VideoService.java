@@ -12,6 +12,7 @@ import com.videosharing.videosharingspringboot.model.VideoStatus;
 import com.videosharing.videosharingspringboot.model.Role;
 import com.videosharing.videosharingspringboot.dto.UserSubmissionResponse;
 import com.videosharing.videosharingspringboot.repository.VideoRepository;
+import com.videosharing.videosharingspringboot.recommendation.RecommendationService;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.data.domain.Page;
@@ -44,6 +45,7 @@ public class VideoService {
     private final String pendingPrefix;
     private final String publicPrefix;
     private final CategoryTagService categoryTagService;
+    private RecommendationService recommendationService;
 
     @Autowired
     public VideoService(VideoRepository videoRepository,
@@ -130,6 +132,19 @@ public class VideoService {
 
     public Page<Video> getRecommendedVideos(Pageable pageable) {
         return videoRepository.findAllByStatusOrderByViewsDescUploadDateDescIdDesc(VideoStatus.APPROVED, pageable);
+    }
+
+    public Page<Video> getRecommendedVideos(User user, Pageable pageable, Long categoryId, Long tagId) {
+        if (recommendationService == null) {
+            if (tagId != null) {
+                return getRecommendedVideosByTag(tagId, pageable);
+            }
+            if (categoryId != null) {
+                return getRecommendedVideosByCategory(categoryId, pageable);
+            }
+            return getRecommendedVideos(pageable);
+        }
+        return recommendationService.recommend(user, pageable, categoryId, tagId);
     }
 
     public Page<Video> getRecommendedVideosByTag(Long tagId, Pageable pageable) {
@@ -386,6 +401,11 @@ public class VideoService {
             normalized = normalized.substring(1);
         }
         return normalized.endsWith("/") ? normalized : normalized + "/";
+    }
+
+    @Autowired(required = false)
+    void setRecommendationService(RecommendationService recommendationService) {
+        this.recommendationService = recommendationService;
     }
 
     public enum DownloadFile {

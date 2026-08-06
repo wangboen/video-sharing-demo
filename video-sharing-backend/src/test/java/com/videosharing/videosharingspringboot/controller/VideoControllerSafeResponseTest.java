@@ -79,9 +79,10 @@ class VideoControllerSafeResponseTest {
         recommended.setId(11L);
         recommended.setTitle("Recommended");
         var pageable = PageRequest.of(0, 6);
-        when(videos.getRecommendedVideos(pageable)).thenReturn(new PageImpl<>(List.of(recommended), pageable, 8));
+        when(videos.getRecommendedVideos(null, pageable, null, null))
+                .thenReturn(new PageImpl<>(List.of(recommended), pageable, 8));
 
-        var response = controller.getRecommendedVideos(0, 6, null, null).getBody();
+        var response = controller.getRecommendedVideos(null, 0, 6, null, null).getBody();
 
         assertEquals(0, response.getNumber());
         assertEquals(6, response.getSize());
@@ -95,9 +96,10 @@ class VideoControllerSafeResponseTest {
         recommended.setId(13L);
         recommended.setTitle("Tagged recommendation");
         var pageable = PageRequest.of(0, 6);
-        when(videos.getRecommendedVideosByTag(99L, pageable)).thenReturn(new PageImpl<>(List.of(recommended), pageable, 1));
+        when(videos.getRecommendedVideos(null, pageable, null, 99L))
+                .thenReturn(new PageImpl<>(List.of(recommended), pageable, 1));
 
-        var response = controller.getRecommendedVideos(0, 6, 99L, null).getBody();
+        var response = controller.getRecommendedVideos(null, 0, 6, 99L, null).getBody();
 
         assertEquals(1, response.getTotalElements());
         assertEquals("Tagged recommendation", response.getContent().get(0).title());
@@ -109,9 +111,10 @@ class VideoControllerSafeResponseTest {
         recommended.setId(14L);
         recommended.setTitle("Category recommendation");
         var pageable = PageRequest.of(0, 6);
-        when(videos.getRecommendedVideosByCategory(5L, pageable)).thenReturn(new PageImpl<>(List.of(recommended), pageable, 1));
+        when(videos.getRecommendedVideos(null, pageable, 5L, null))
+                .thenReturn(new PageImpl<>(List.of(recommended), pageable, 1));
 
-        var response = controller.getRecommendedVideos(0, 6, null, 5L).getBody();
+        var response = controller.getRecommendedVideos(null, 0, 6, null, 5L).getBody();
 
         assertEquals(1, response.getTotalElements());
         assertEquals("Category recommendation", response.getContent().get(0).title());

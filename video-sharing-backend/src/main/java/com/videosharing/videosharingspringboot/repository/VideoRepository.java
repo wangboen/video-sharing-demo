@@ -13,6 +13,7 @@ import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
 
 import java.time.Instant;
+import java.time.LocalDateTime;
 import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
@@ -21,6 +22,84 @@ import java.util.Optional;
 public interface VideoRepository extends JpaRepository<Video, Long> {
     List<Video> findAllByStatusOrderByUploadDateAscIdAsc(VideoStatus status);
     Page<Video> findAllByStatusOrderByViewsDescUploadDateDescIdDesc(VideoStatus status, Pageable pageable);
+    @Query("""
+            select v.id from Video v
+            where v.status = :status
+            order by v.views desc, v.uploadDate desc, v.id desc
+            """)
+    List<Long> findHotCandidateIds(@Param("status") VideoStatus status, Pageable pageable);
+
+    @Query("""
+            select v.id from Video v
+            where v.status = :status
+              and v.category.id = :categoryId
+              and v.category.enabled = true
+            order by v.views desc, v.uploadDate desc, v.id desc
+            """)
+    List<Long> findHotCandidateIdsByCategory(@Param("status") VideoStatus status,
+                                             @Param("categoryId") Long categoryId,
+                                             Pageable pageable);
+
+    @Query("""
+            select v.id from Video v
+            where v.status = :status
+              and v.uploadDate >= :uploadedAfter
+            order by v.uploadDate desc, v.id desc
+            """)
+    List<Long> findFreshCandidateIds(@Param("status") VideoStatus status,
+                                     @Param("uploadedAfter") LocalDateTime uploadedAfter,
+                                     Pageable pageable);
+
+    @Query("""
+            select v.id from Video v
+            where v.status = :status
+              and v.category.id = :categoryId
+              and v.category.enabled = true
+              and v.uploadDate >= :uploadedAfter
+            order by v.uploadDate desc, v.id desc
+            """)
+    List<Long> findFreshCandidateIdsByCategory(@Param("status") VideoStatus status,
+                                               @Param("categoryId") Long categoryId,
+                                               @Param("uploadedAfter") LocalDateTime uploadedAfter,
+                                               Pageable pageable);
+
+    @Query("""
+            select v.id from Video v
+            where v.status = :status
+              and v.uploadDate >= :uploadedAfter
+              and v.views <= :maxViews
+            order by v.uploadDate desc, v.id desc
+            """)
+    List<Long> findExploreCandidateIds(@Param("status") VideoStatus status,
+                                       @Param("uploadedAfter") LocalDateTime uploadedAfter,
+                                       @Param("maxViews") long maxViews,
+                                       Pageable pageable);
+
+    @Query("""
+            select v.id from Video v
+            where v.status = :status
+              and v.category.id = :categoryId
+              and v.category.enabled = true
+            order by v.views desc, v.uploadDate desc, v.id desc
+            """)
+    List<Long> findCategoryCandidateIds(@Param("status") VideoStatus status,
+                                        @Param("categoryId") Long categoryId,
+                                        Pageable pageable);
+
+    @Query("""
+            select distinct v.id from Video v
+            join v.tags tag
+            where v.status = :status
+              and tag.id = :tagId
+              and tag.enabled = true
+            order by v.views desc, v.uploadDate desc, v.id desc
+            """)
+    List<Long> findTagCandidateIds(@Param("status") VideoStatus status,
+                                   @Param("tagId") Long tagId,
+                                   Pageable pageable);
+
+    List<Video> findAllByIdIn(Collection<Long> ids);
+
     @Query("""
             select v from Video v
             where v.status = :status

@@ -94,6 +94,15 @@ CREATE INDEX idx_staff_accounts_role_username
 CREATE INDEX idx_videos_status_upload_id
     ON videos (status, upload_date, id);
 
+CREATE INDEX idx_videos_status_views_upload_id
+    ON videos (status, views DESC, upload_date DESC, id DESC);
+
+CREATE INDEX idx_videos_status_upload_id_desc
+    ON videos (status, upload_date DESC, id DESC);
+
+CREATE INDEX idx_videos_status_category_upload_id
+    ON videos (status, category_id, upload_date DESC, id DESC);
+
 CREATE INDEX idx_video_category_id
     ON videos (category_id);
 
@@ -163,6 +172,9 @@ CREATE TABLE user_video_watch_history (
 
 CREATE INDEX idx_watch_history_user_last
     ON user_video_watch_history (user_id, last_watched_at DESC, video_id);
+
+CREATE INDEX idx_watch_history_user_completed_last
+    ON user_video_watch_history (user_id, completed, last_watched_at DESC, video_id);
 
 CREATE TABLE comment_likes (
     comment_id BIGINT NOT NULL,

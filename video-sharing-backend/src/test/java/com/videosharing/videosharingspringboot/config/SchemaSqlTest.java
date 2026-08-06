@@ -62,4 +62,20 @@ class SchemaSqlTest {
                     .contains("create index idx_staff_accounts_role_username on staff_accounts (role, username)");
         }
     }
+
+    @Test
+    void schemaDefinesRecommendationIndexes() throws IOException {
+        try (var stream = getClass().getResourceAsStream("/schema.sql")) {
+            assertThat(stream).isNotNull();
+            String schema = new String(stream.readAllBytes(), StandardCharsets.UTF_8)
+                    .toLowerCase()
+                    .replaceAll("\\s+", " ");
+
+            assertThat(schema)
+                    .contains("create index idx_videos_status_views_upload_id on videos (status, views desc, upload_date desc, id desc)")
+                    .contains("create index idx_videos_status_upload_id_desc on videos (status, upload_date desc, id desc)")
+                    .contains("create index idx_videos_status_category_upload_id on videos (status, category_id, upload_date desc, id desc)")
+                    .contains("create index idx_watch_history_user_completed_last on user_video_watch_history (user_id, completed, last_watched_at desc, video_id)");
+        }
+    }
 }
