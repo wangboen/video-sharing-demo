@@ -130,6 +130,18 @@ function tagPayload() {
   }
 }
 
+function enabledStatusText(item) {
+  return item.enabled ? '已启用' : '已禁用'
+}
+
+function toggleEnabledLabel(item) {
+  return item.enabled ? '禁用' : '恢复'
+}
+
+function nextEnabledValue(item) {
+  return !item.enabled
+}
+
 async function loadCategories() {
   loading.value = true
   listError.value = ''
@@ -250,7 +262,7 @@ function editTag(tag) {
 async function toggleCategory(category) {
   try {
     const { data } = await api.patch(`/api/admin/categories/${category.id}/enabled`, {
-      enabled: !category.enabled,
+      enabled: nextEnabledValue(category),
     })
     upsertCategory(data)
   } catch {
@@ -262,7 +274,7 @@ async function toggleCategory(category) {
 async function toggleTag(tag) {
   try {
     const { data } = await api.patch(`/api/admin/tags/${tag.id}/enabled`, {
-      enabled: !tag.enabled,
+      enabled: nextEnabledValue(tag),
     })
     upsertTag(data)
   } catch {
@@ -378,7 +390,7 @@ onMounted(async () => {
                 <td class="telemetry">{{ category.sortOrder ?? 0 }}</td>
                 <td>
                   <span class="role-chip telemetry" :class="{ 'role-chip--disabled': !category.enabled }">
-                    {{ category.enabled ? '已启用' : '已禁用' }}
+                    {{ enabledStatusText(category) }}
                   </span>
                 </td>
                 <td>
@@ -390,7 +402,7 @@ onMounted(async () => {
                       编辑
                     </button>
                     <button class="button button--quiet button--compact" type="button" :data-test="`toggle-category-${category.id}`" @click="toggleCategory(category)">
-                      {{ category.enabled ? '禁用' : '恢复' }}
+                      {{ toggleEnabledLabel(category) }}
                     </button>
                   </div>
                 </td>
@@ -504,7 +516,7 @@ onMounted(async () => {
                 <td class="telemetry">{{ tag.sortOrder ?? 0 }}</td>
                 <td>
                   <span class="role-chip telemetry" :class="{ 'role-chip--disabled': !tag.enabled }">
-                    {{ tag.enabled ? '已启用' : '已禁用' }}
+                    {{ enabledStatusText(tag) }}
                   </span>
                 </td>
                 <td>
@@ -513,7 +525,7 @@ onMounted(async () => {
                       编辑
                     </button>
                     <button class="button button--quiet button--compact" type="button" :data-test="`toggle-tag-${tag.id}`" @click="toggleTag(tag)">
-                      {{ tag.enabled ? '禁用' : '恢复' }}
+                      {{ toggleEnabledLabel(tag) }}
                     </button>
                   </div>
                 </td>

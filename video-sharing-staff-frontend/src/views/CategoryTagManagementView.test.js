@@ -165,6 +165,26 @@ describe('admin category and tag management', () => {
     expect(wrapper.text()).toContain('已禁用')
   })
 
+  it('restores a disabled category with the enabled target state', async () => {
+    mocks.patch.mockResolvedValueOnce({
+      data: { ...categories[1], enabled: true },
+    })
+    const wrapper = mount(CategoryTagManagementView)
+    await flushPromises()
+
+    expect(wrapper.get('[data-test="toggle-category-2"]').text()).toBe('恢复')
+
+    await wrapper.get('[data-test="toggle-category-2"]').trigger('click')
+    await flushPromises()
+
+    expect(mocks.patch).toHaveBeenCalledWith('/api/admin/categories/2/enabled', { enabled: true })
+    expect(wrapper.get('[data-test="toggle-category-2"]').text()).toBe('禁用')
+    const categoryRow = wrapper
+      .findAll('[data-test="category-list-body"] tr')
+      .find((row) => row.text().includes('game'))
+    expect(categoryRow.text()).toContain('已启用')
+  })
+
   it('creates and edits tags under a selected category', async () => {
     mocks.post.mockResolvedValueOnce({
       data: {
@@ -238,6 +258,28 @@ describe('admin category and tag management', () => {
     await flushPromises()
 
     expect(mocks.patch).toHaveBeenCalledWith('/api/admin/tags/10/enabled', { enabled: false })
+  })
+
+  it('restores a disabled tag with the enabled target state', async () => {
+    const disabledTags = [{ ...tags[0], enabled: false }]
+    mockInitialLoad(categories, disabledTags)
+    mocks.patch.mockResolvedValueOnce({
+      data: { ...tags[0], enabled: true },
+    })
+    const wrapper = mount(CategoryTagManagementView)
+    await flushPromises()
+
+    expect(wrapper.get('[data-test="toggle-tag-10"]').text()).toBe('恢复')
+
+    await wrapper.get('[data-test="toggle-tag-10"]').trigger('click')
+    await flushPromises()
+
+    expect(mocks.patch).toHaveBeenCalledWith('/api/admin/tags/10/enabled', { enabled: true })
+    expect(wrapper.get('[data-test="toggle-tag-10"]').text()).toBe('禁用')
+    const tagRow = wrapper
+      .findAll('[data-test="tag-list-body"] tr')
+      .find((row) => row.text().includes('movie_action'))
+    expect(tagRow.text()).toContain('已启用')
   })
 
   it('selects a category and loads only its tag list', async () => {
