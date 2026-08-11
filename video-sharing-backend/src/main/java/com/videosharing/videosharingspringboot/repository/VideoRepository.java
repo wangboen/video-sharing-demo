@@ -87,7 +87,7 @@ public interface VideoRepository extends JpaRepository<Video, Long> {
                                         Pageable pageable);
 
     @Query("""
-            select distinct v.id from Video v
+            select v.id from Video v
             join v.tags tag
             where v.status = :status
               and tag.id = :tagId

@@ -76,7 +76,10 @@ public class RecommendationService {
         pools.add(safe(CandidatePoolType.FRESH, () -> fresh.candidates(request, providerLimit)));
         pools.add(safe(CandidatePoolType.EXPLORE, () -> explore.candidates(request, providerLimit)));
 
-        List<Long> fallback = repository.findHotCandidateIds(VideoStatus.APPROVED, PageRequest.of(0, fallbackLimit));
+        List<Long> fallback = categoryId == null
+                ? repository.findHotCandidateIds(VideoStatus.APPROVED, PageRequest.of(0, fallbackLimit))
+                : repository.findHotCandidateIdsByCategory(VideoStatus.APPROVED, categoryId,
+                        PageRequest.of(0, fallbackLimit));
         List<Long> ids = mixer.mix(request, pools, fallback);
         List<Video> ordered = loadInOrder(ids);
         Pageable effectivePageable = pageable == null ? PageRequest.of(page, size) : pageable;

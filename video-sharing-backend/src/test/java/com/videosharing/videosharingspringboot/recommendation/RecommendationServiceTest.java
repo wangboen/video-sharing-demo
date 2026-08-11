@@ -86,6 +86,23 @@ class RecommendationServiceTest {
         assertThat(service.recommend(null, pageable, null, 5L)).isEqualTo(expected);
     }
 
+    @Test
+    void categoryRecommendationUsesCategoryScopedHotFallback() {
+        RecommendationService service = service();
+        var pageable = PageRequest.of(0, 12);
+        RecommendationRequest request = RecommendationRequest.home(null, 0, 12, 7L, null, false, false);
+        when(hot.candidates(request, 36)).thenReturn(new CandidatePoolResult(CandidatePoolType.HOT, List.of(1L)));
+        when(fresh.candidates(request, 36)).thenReturn(new CandidatePoolResult(CandidatePoolType.FRESH, List.of()));
+        when(explore.candidates(request, 36)).thenReturn(new CandidatePoolResult(CandidatePoolType.EXPLORE, List.of()));
+        when(repository.findHotCandidateIdsByCategory(VideoStatus.APPROVED, 7L, PageRequest.of(0, 50)))
+                .thenReturn(List.of(2L, 3L));
+        when(repository.findAllByIdIn(List.of(1L, 2L, 3L))).thenReturn(videos(3L, 2L, 1L));
+
+        Page<Video> result = service.recommend(null, pageable, 7L, null);
+
+        assertThat(result.getContent()).extracting(Video::getId).containsExactly(1L, 2L, 3L);
+    }
+
     private RecommendationService service() {
         return new RecommendationService(repository, hot, fresh, explore, category, tag, watching, profiles,
                 new RecommendationMixer());
