@@ -20,7 +20,7 @@ function staffHome() {
 
 async function logout() {
   try {
-    await api.post('/api/auth/logout')
+    await api.post('/api/staff/auth/logout')
   } catch {
     // Local staff credentials are authoritative for leaving this browser session.
   } finally {
