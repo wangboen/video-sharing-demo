@@ -1,11 +1,25 @@
 import { createApp } from 'vue'
 import App from './App.vue'
 import router from './router'
+import api, { refreshAccessToken } from './services/api'
+import { clearAuth, getStoredUser, updateStoredUser } from './services/auth'
 
 import './assets/main.css' // We'll create this later
 
-const app = createApp(App)
+async function startApp() {
+  if (getStoredUser()) {
+    try {
+      await refreshAccessToken()
+      const { data } = await api.get('/api/auth/me')
+      updateStoredUser(data)
+    } catch {
+      clearAuth()
+    }
+  }
 
-app.use(router)
+  const app = createApp(App)
+  app.use(router)
+  app.mount('#app')
+}
 
-app.mount('#app')
+startApp()

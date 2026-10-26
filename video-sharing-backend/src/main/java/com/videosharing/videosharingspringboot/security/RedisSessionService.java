@@ -4,7 +4,6 @@ import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Service;
 
 import java.time.Duration;
-import java.util.concurrent.TimeUnit;
 
 @Service
 public class RedisSessionService {
@@ -18,7 +17,7 @@ public class RedisSessionService {
     }
 
     public void createSession(String sessionId, Long userId, Duration lifetime) {
-        redisTemplate.opsForValue().set(key(sessionId), userId.toString(), lifetime.toHours(), TimeUnit.HOURS);
+        redisTemplate.opsForValue().set(key(sessionId), userId.toString(), lifetime);
     }
 
     public boolean isSessionActive(String sessionId, Long userId) {
