@@ -3,6 +3,7 @@ package com.videosharing.videosharingspringboot.recommendation;
 import com.videosharing.videosharingspringboot.model.VideoTag;
 import com.videosharing.videosharingspringboot.model.WatchHistory;
 import com.videosharing.videosharingspringboot.repository.WatchHistoryRepository;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
@@ -23,6 +24,7 @@ public class InterestProfileService {
     private final Clock clock;
     private final long ttlSeconds;
 
+    @Autowired
     public InterestProfileService(WatchHistoryRepository historyRepository,
                                   RecommendationCache cache,
                                   @Value("${recommendation.cache.profile-ttl-seconds:600}") long ttlSeconds) {

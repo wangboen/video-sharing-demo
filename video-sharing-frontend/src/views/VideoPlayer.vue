@@ -28,6 +28,137 @@ const commentError = ref('')
 const currentUser = ref(getStoredUser())
 const player = ref(null)
 const watchHistory = ref(null)
+const isPlaying = ref(false)
+const currentTime = ref(0)
+const duration = ref(0)
+const volume = ref(1)
+const isMuted = ref(false)
+const isFullscreen = ref(false)
+const isWebFullscreen = ref(false)
+const showControls = ref(true)
+const playbackRate = ref(1)
+const showSpeedMenu = ref(false)
+const isPiPActive = ref(false)
+const speeds = [0.5, 0.75, 1, 1.25, 1.5, 2]
+let controlsTimer = null
+
+function togglePlay() {
+  if (!player.value) return
+  if (player.value.paused) {
+    player.value.play()
+  } else {
+    player.value.pause()
+  }
+}
+
+function handleTimeUpdate() {
+  if (!player.value) return
+  currentTime.value = player.value.currentTime
+  reportWatchProgress('heartbeat')
+}
+
+function handleLoadedMetadata() {
+  if (!player.value) return
+  duration.value = player.value.duration
+}
+
+function handleSeek(e) {
+  if (!player.value) return
+  const rect = e.currentTarget.getBoundingClientRect()
+  const pos = (e.clientX - rect.left) / rect.width
+  player.value.currentTime = pos * duration.value
+}
+
+function formatTime(seconds) {
+  const h = Math.floor(seconds / 3600)
+  const m = Math.floor((seconds % 3600) / 60)
+  const s = Math.floor(seconds % 60)
+  if (h > 0) return `${h}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`
+  return `${m}:${String(s).padStart(2, '0')}`
+}
+
+function toggleMute() {
+  if (!player.value) return
+  isMuted.value = !isMuted.value
+  player.value.muted = isMuted.value
+}
+
+function changePlaybackRate(rate) {
+  if (!player.value) return
+  playbackRate.value = rate
+  player.value.playbackRate = rate
+  showSpeedMenu.value = false
+}
+
+async function togglePiP() {
+  if (!player.value) return
+  try {
+    if (document.pictureInPictureElement) {
+      await document.exitPictureInPicture()
+      isPiPActive.value = false
+    } else {
+      await player.value.requestPictureInPicture()
+      isPiPActive.value = true
+    }
+  } catch (err) {
+    console.error('PiP error:', err)
+  }
+}
+
+function downloadVideo() {
+  if (!video.value) return
+  const url = getVideoUrl(video.value)
+  const a = document.createElement('a')
+  a.href = url
+  a.download = video.value.title || 'video'
+  a.target = '_blank'
+  document.body.appendChild(a)
+  a.click()
+  document.body.removeChild(a)
+}
+
+function toggleWebFullscreen() {
+  isWebFullscreen.value = !isWebFullscreen.value
+  if (isWebFullscreen.value) {
+    document.body.style.overflow = 'hidden'
+    if (isFullscreen.value) toggleFullscreen()
+  } else {
+    document.body.style.overflow = ''
+  }
+}
+
+function toggleFullscreen() {
+  if (!player.value) return
+  const container = player.value.parentElement
+  if (!document.fullscreenElement) {
+    container.requestFullscreen().catch(() => {})
+    isFullscreen.value = true
+  } else {
+    document.exitFullscreen()
+    isFullscreen.value = false
+  }
+}
+
+function handleFullscreenChange() {
+  isFullscreen.value = !!document.fullscreenElement
+}
+
+function closeMenus(e) {
+  if (!e.target.closest('.speed-control')) {
+    showSpeedMenu.value = false
+  }
+}
+
+function handleMouseMove() {
+  showControls.value = true
+  clearTimeout(controlsTimer)
+  if (isPlaying.value) {
+    controlsTimer = setTimeout(() => {
+      showControls.value = false
+    }, 3000)
+  }
+}
+
 let latestRequestVersion = 0
 let latestCommentRequestVersion = 0
 let lastProgressReportedAt = 0
@@ -241,11 +372,21 @@ watch(() => route.params.id, loadPage, { immediate: true })
 
 onMounted(() => {
   document.addEventListener('visibilitychange', handleVisibilityChange)
+  document.addEventListener('fullscreenchange', handleFullscreenChange)
+  document.addEventListener('click', closeMenus)
+  if (player.value) {
+    player.value.addEventListener('enterpictureinpicture', () => { isPiPActive.value = true })
+    player.value.addEventListener('leavepictureinpicture', () => { isPiPActive.value = false })
+  }
 })
 
 onBeforeUnmount(() => {
   reportWatchProgress('unload', { force: true })
   document.removeEventListener('visibilitychange', handleVisibilityChange)
+  document.removeEventListener('fullscreenchange', handleFullscreenChange)
+  document.removeEventListener('click', closeMenus)
+  document.body.style.overflow = ''
+  clearTimeout(controlsTimer)
 })
 </script>
 
@@ -256,16 +397,68 @@ onBeforeUnmount(() => {
 
     <div v-else-if="video" class="watch-layout">
       <section class="watch-layout__main">
-        <video
-          ref="player"
-          class="watch-player"
-          controls
-          :src="getVideoUrl(video)"
-          :poster="getThumbnailUrl(video)"
-          @timeupdate="reportWatchProgress('heartbeat')"
-          @pause="reportWatchProgress('pause', { force: true })"
-          @ended="reportWatchProgress('ended', { force: true })"
-        />
+        <div class="video-container" :class="{ 'is-web-fullscreen': isWebFullscreen }" @mousemove="handleMouseMove" @mouseleave="showControls = false">
+          <video
+            ref="player"
+            class="watch-player"
+            :src="getVideoUrl(video)"
+            :poster="getThumbnailUrl(video)"
+            @timeupdate="handleTimeUpdate"
+            @loadedmetadata="handleLoadedMetadata"
+            @play="isPlaying = true"
+            @pause="isPlaying = false"
+            @ended="reportWatchProgress('ended', { force: true })"
+            @click="togglePlay"
+          />
+          <div class="video-controls" :class="{ 'video-controls--hidden': !showControls && isPlaying }">
+            <div class="progress-bar" @click="handleSeek">
+              <div class="progress-bar__total"></div>
+              <div class="progress-bar__current" :style="{ width: (duration > 0 ? (currentTime / duration * 100) : 0) + '%' }"></div>
+            </div>
+            <div class="controls-main">
+              <div class="controls-left">
+                <button class="control-btn" type="button" aria-label="播放/暂停" @click="togglePlay">
+                  <svg v-if="!isPlaying" viewBox="0 0 24 24" width="24" height="24"><path fill="currentColor" d="M8 5v14l11-7z"/></svg>
+                  <svg v-else viewBox="0 0 24 24" width="24" height="24"><path fill="currentColor" d="M6 19h4V5H6v14zm8-14v14h4V5h-4z"/></svg>
+                </button>
+                <span class="time-display">{{ formatTime(currentTime) }} / {{ formatTime(duration) }}</span>
+              </div>
+              <div class="controls-right">
+                <button class="control-btn" type="button" aria-label="静音/取消静音" @click="toggleMute">
+                  <svg v-if="isMuted" viewBox="0 0 24 24" width="24" height="24"><path fill="currentColor" d="M3.63 3.63L2.22 5.04L7 9.83v5.17h4l5 5v-6.73l4.25 4.25c-.67.52-1.42.93-2.25 1.18v2.06c1.38-.31 2.63-.95 3.69-1.81l2.04 2.04l1.41-1.41L3.63 3.63zM12 4L9.91 6.09L12 8.18V4zM16.5 12c0-1.77-1.02-3.29-2.5-4.03v1.85l2.48 2.48c.01-.1.02-.2.02-.3zM19 12c0 .94-.2 1.82-.54 2.64l1.51 1.51C20.63 14.91 21 13.5 21 12c0-4.28-2.99-7.86-7-8.77v2.06c2.89.86 5 3.54 5 6.71z"/></svg>
+                  <svg v-else viewBox="0 0 24 24" width="24" height="24"><path fill="currentColor" d="M3 9v6h4l5 5V4L7 9H3zm13.5 3c0-1.77-1.02-3.29-2.5-4.03v8.05c1.48-.73 2.5-2.25 2.5-4.02zM14 3.23v2.06c2.89.86 5 3.54 5 6.71s-2.11 5.85-5 6.71v2.06c4.01-.91 7-4.49 7-8.77s-2.99-7.86-7-8.77z"/></svg>
+                </button>
+
+                <div class="speed-control">
+                  <button class="control-btn speed-btn" type="button" title="播放速度" @click="showSpeedMenu = !showSpeedMenu">
+                    {{ playbackRate === 1 ? '倍速' : playbackRate + 'x' }}
+                  </button>
+                  <div v-if="showSpeedMenu" class="speed-menu">
+                    <button v-for="rate in speeds" :key="rate" :class="{ 'active': playbackRate === rate }" @click="changePlaybackRate(rate)">
+                      {{ rate }}x
+                    </button>
+                  </div>
+                </div>
+
+                <button class="control-btn" type="button" title="下载" @click="downloadVideo">
+                  <svg viewBox="0 0 24 24" width="22" height="22"><path fill="currentColor" d="M5 20h14v-2H5v2zM19 9h-4V3H9v6H5l7 7 7-7z"/></svg>
+                </button>
+
+                <button class="control-btn" type="button" title="画中画" @click="togglePiP">
+                  <svg viewBox="0 0 24 24" width="22" height="22"><path fill="currentColor" d="M19 7h-8v6h8V7zm2-4H3c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h18c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm0 16H3V5h18v14z"/></svg>
+                </button>
+
+                <button class="control-btn" type="button" title="网页全屏" aria-label="网页全屏" @click="toggleWebFullscreen">
+                  <svg viewBox="0 0 24 24" width="24" height="24"><path fill="currentColor" d="M21 3H3c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h18c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm0 16H3V5h18v14zM7 10h10v2H7z"/></svg>
+                </button>
+                <button class="control-btn" type="button" aria-label="全屏" @click="toggleFullscreen">
+                  <svg v-if="!isFullscreen" viewBox="0 0 24 24" width="24" height="24"><path fill="currentColor" d="M7 14H5v5h5v-2H7v-3zm-2-4h2V7h3V5H5v5zm12 7h-3v2h5v-5h-2v3zM14 5v2h3v3h2V5h-5z"/></svg>
+                  <svg v-else viewBox="0 0 24 24" width="24" height="24"><path fill="currentColor" d="M5 16h3v3h2v-5H5v2zm3-8H5v2h5V5H8v3zm6 11h2v-3h3v-2h-5v5zm2-11V5h-2v5h5V8h-3z"/></svg>
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
 
         <section class="video-details">
           <div class="video-details__heading">
@@ -322,7 +515,64 @@ onBeforeUnmount(() => {
 <style scoped>
 .video-player-page { margin: 0 auto; max-width: 1440px; }
 .watch-layout { display: grid; gap: 32px; grid-template-columns: minmax(0, 1fr) minmax(285px, 360px); }
-.watch-player { aspect-ratio: 16 / 9; background: #080808; border-radius: var(--radius-md); display: block; max-height: 70vh; width: 100%; }
+.watch-player { aspect-ratio: 16 / 9; background: #000; display: block; height: 100%; width: 100%; object-fit: contain; }
+.video-container { aspect-ratio: 16 / 9; background: #000; border-radius: var(--radius-md); position: relative; overflow: hidden; max-height: 80vh; width: 100%; }
+.video-container.is-web-fullscreen { position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; max-height: none; z-index: 2000; border-radius: 0; aspect-ratio: auto; }
+.video-controls {
+  background: linear-gradient(transparent, rgba(0, 0, 0, 0.7));
+  bottom: 0;
+  left: 0;
+  opacity: 1;
+  padding: 10px 20px 15px;
+  position: absolute;
+  right: 0;
+  transition: opacity 0.3s ease;
+  width: 100%;
+  z-index: 10;
+  box-sizing: border-box;
+}
+.video-controls--hidden { opacity: 0; pointer-events: none; }
+.progress-bar { cursor: pointer; height: 4px; margin-bottom: 12px; position: relative; width: 100%; }
+.progress-bar:hover { height: 6px; }
+.progress-bar__total { background: rgba(255, 255, 255, 0.2); height: 100%; width: 100%; }
+.progress-bar__current { background: var(--brand); height: 100%; left: 0; position: absolute; top: 0; }
+.controls-main { align-items: center; display: flex; justify-content: space-between; }
+.controls-left, .controls-right { align-items: center; display: flex; gap: 15px; }
+.control-btn { background: transparent; border: 0; color: #fff; cursor: pointer; padding: 5px; transition: transform 0.1s ease; display: flex; align-items: center; justify-content: center; }
+.control-btn:hover { transform: scale(1.1); }
+.control-btn svg { filter: drop-shadow(0 0 2px rgba(0, 0, 0, 0.5)); }
+.speed-control { position: relative; }
+.speed-btn { font-size: 0.8rem; font-weight: 700; min-width: 42px; }
+.speed-menu {
+  background: rgba(28, 28, 28, 0.95);
+  border-radius: 8px;
+  bottom: 100%;
+  display: flex;
+  flex-direction: column-reverse;
+  gap: 2px;
+  left: 50%;
+  margin-bottom: 15px;
+  padding: 8px;
+  position: absolute;
+  transform: translateX(-50%);
+  width: 70px;
+  z-index: 20;
+  backdrop-filter: blur(8px);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+}
+.speed-menu button {
+  background: transparent;
+  border: 0;
+  border-radius: 4px;
+  color: #fff;
+  cursor: pointer;
+  font-size: 0.85rem;
+  padding: 8px;
+  transition: background 0.2s ease;
+}
+.speed-menu button:hover { background: rgba(255, 255, 255, 0.1); }
+.speed-menu button.active { color: var(--brand); font-weight: 700; }
+.time-display { color: #fff; font-size: 0.85rem; font-weight: 500; font-family: monospace; text-shadow: 0 0 2px rgba(0, 0, 0, 0.5); }
 .video-details { padding: 22px 2px 0; }
 .video-details__heading { align-items: flex-start; display: flex; gap: 20px; justify-content: space-between; }
 h1 { font-size: clamp(1.45rem, 2.5vw, 2.15rem); letter-spacing: -.045em; line-height: 1.2; margin: 0; }

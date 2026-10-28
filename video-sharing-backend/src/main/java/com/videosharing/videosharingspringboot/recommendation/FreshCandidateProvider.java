@@ -2,6 +2,7 @@ package com.videosharing.videosharingspringboot.recommendation;
 
 import com.videosharing.videosharingspringboot.model.VideoStatus;
 import com.videosharing.videosharingspringboot.repository.VideoRepository;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
@@ -20,6 +21,7 @@ public class FreshCandidateProvider {
     private final long ttlSeconds;
     private final long windowDays;
 
+    @Autowired
     public FreshCandidateProvider(VideoRepository repository,
                                   RecommendationCache cache,
                                   @Value("${recommendation.cache.fresh-ttl-seconds:300}") long ttlSeconds,

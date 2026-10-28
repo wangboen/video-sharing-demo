@@ -2,6 +2,7 @@ package com.videosharing.videosharingspringboot.recommendation;
 
 import com.videosharing.videosharingspringboot.model.VideoStatus;
 import com.videosharing.videosharingspringboot.repository.VideoRepository;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
@@ -24,6 +25,7 @@ public class ExploreCandidateProvider {
     private final long maxViews;
     private final long windowDays;
 
+    @Autowired
     public ExploreCandidateProvider(VideoRepository repository,
                                     RecommendationCache cache,
                                     @Value("${recommendation.cache.explore-ttl-seconds:1800}") long ttlSeconds,
